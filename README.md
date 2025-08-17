@@ -25,11 +25,35 @@ docker compose up -d --build
 # 既定ログイン: パスワードは app/config/password.json のハッシュを生成して差し替えてください
 ```
 
+### 初期セットアップ（設定ファイルの配置）
+- 実運用用ファイルは Git には含めません。以下の例ファイルをコピーしてから編集してください。
+
+```bash
+cp app/config/config.example.json app/config/config.json
+cp app/config/tags.example.txt app/config/tags.txt
+cp app/config/password.example.json app/config/password.json
+# password.json の "hash" はご自身で生成した bcrypt ハッシュに置き換えてください
+```
+
 ### スケジューラ（開発）
 - `docker-compose.yml` の `scheduler` サービスが 60 秒ごとに `app/cron/runner.php` を実行します。
 
 ### 本番の想定
 - `SPECS.md` に従い、`/app/public` をドキュメントルートとして公開、`/app/data`/`/app/config`/`/app/logs` は非公開領域に配置。
+
+### エックスサーバーでの Cron 設定（本番）
+- 推奨（毎分実行）
+```
+/usr/bin/php /home/＜アカウント名＞/＜アプリ配置ディレクトリ＞/app/cron/runner.php >/dev/null 2>&1
+```
+- 5分おき
+```
+/usr/bin/php /home/＜アカウント名＞/＜アプリ配置ディレクトリ＞/app/cron/runner.php >/dev/null 2>&1
+```
+- 補足
+  - `＜アカウント名＞`: エックスサーバーのサーバーID（例: xs123456）
+  - `＜アプリ配置ディレクトリ＞`: デプロイ先のルート。`runner.php` は `app/cron/runner.php`
+  - PHPのパスが異なる場合は `/usr/bin/php` をサーバーのバージョンに合わせて変更（例: `/usr/bin/php82`）
 
 ### 免責
 - X API の仕様変更等により動作しない可能性があります。実運用前に十分な検証を行ってください。

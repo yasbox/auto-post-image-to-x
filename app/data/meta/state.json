@@ -1,6 +1,7 @@
 {
-  "lastPostAt": 0,
-  "fixedTimesConsumed": {}
+    "lastPostAt": 1755425032,
+    "fixedTimesConsumed": {
+        "2025-08-17 09:00": true,
+        "2025-08-17 13:00": true
+    }
 }
-
-

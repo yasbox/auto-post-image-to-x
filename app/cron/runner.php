@@ -66,7 +66,13 @@ try {
     $num = max($min, min($max, random_int($min, $max)));
     $picked = array_slice($tags, 0, $num);
     $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', $t), $picked);
-    $text = trim(implode(' ', $hashtags) . ' ' . $title);
+    $hashtagsStr = trim(implode(' ', $hashtags));
+    $titleStr = trim((string)($title ?? ''));
+    if ($hashtagsStr !== '' && $titleStr !== '') {
+        $text = $hashtagsStr . "\n" . $titleStr;
+    } else {
+        $text = $hashtagsStr . $titleStr;
+    }
     if (mb_strlen($text) > (int)$cfg['post']['textMax']) $text = mb_substr($text, 0, (int)$cfg['post']['textMax']);
 
     // Image

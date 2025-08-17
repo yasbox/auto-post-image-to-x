@@ -1,4 +1,59 @@
 /* Minimal overrides */
 .dropzone { border: 2px dashed #9ca3af; padding: 1rem; background: #f9fafb; }
+.is-dragover { outline: 3px dashed #3b82f6; outline-offset: 4px; }
+
+/* UI polish */
+.toolbar {
+	backdrop-filter: saturate(180%) blur(6px);
+}
+.card {
+	border: 1px solid #e5e7eb;
+	border-radius: 0.75rem;
+	background: #fff;
+	box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.card--hover:hover {
+	box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+}
+.img-card {
+	transition: transform .15s ease, box-shadow .15s ease;
+}
+.img-card:hover {
+	transform: translateY(-2px);
+	box-shadow: 0 10px 24px rgba(0,0,0,0.08);
+}
+.btn-base {
+	display: inline-flex; align-items: center; justify-content: center;
+	border-radius: 0.5rem; font-weight: 600; line-height: 1;
+	transition: background-color .15s ease, box-shadow .15s ease, transform .05s ease;
+}
+.btn-base:active { transform: translateY(1px); }
+.btn-primary { background:#2563eb; color:#fff; }
+.btn-primary:hover { background:#1d4ed8; }
+.btn-ghost { background: #f3f4f6; color:#111827; }
+.btn-ghost:hover { background:#e5e7eb; }
+.empty-state { border:2px dashed #e5e7eb; border-radius: 0.75rem; color:#6b7280; }
+
+/* Square thumbnail container with letterboxing */
+.thumb {
+	position: relative;
+	width: 100%;
+	padding-top: 100%; /* square */
+	background: #f3f4f6; /* light gray */
+	border-radius: 0.75rem;
+	overflow: hidden;
+}
+.thumb img {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	max-width: 100%;
+	max-height: 100%;
+	width: auto;
+	height: auto;
+	object-fit: contain;
+	background: transparent;
+}
 
 

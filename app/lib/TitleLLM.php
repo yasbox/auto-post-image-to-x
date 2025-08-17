@@ -51,7 +51,8 @@ final class TitleLLM
         } catch (\Throwable $e) {
             // fallthrough
         }
-        return 'Untitled';
+        // Fallback: no title (hashtags only)
+        return '';
     }
 }
 

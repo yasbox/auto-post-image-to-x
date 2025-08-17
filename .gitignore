@@ -1,13 +1,21 @@
 node_modules/
 .DS_Store
-vendor/
+# Ignore only root-level vendor (e.g., Composer). Keep web assets under public.
+/vendor/
 *.log
 app/config/.env
 app/logs/*
 app/data/tmp/*
 app/data/inbox/*
 app/public/assets/*.map
+# Ensure vendored frontend assets are tracked
+!app/public/assets/vendor/
+!app/public/assets/vendor/**
 .idea/
 .vscode/
 
 
+
+app/config/config.json
+app/config/password.json
+app/config/tags.txt

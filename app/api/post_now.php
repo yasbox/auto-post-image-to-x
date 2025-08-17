@@ -43,8 +43,14 @@ try {
     $picked = array_slice($tags, 0, $num);
     $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', $t), $picked);
 
-    // 4) text
-    $text = trim(implode(' ', $hashtags) . ' ' . $title);
+    // 4) text (hashtags + newline + title)
+    $hashtagsStr = trim(implode(' ', $hashtags));
+    $titleStr = trim((string)($title ?? ''));
+    if ($hashtagsStr !== '' && $titleStr !== '') {
+        $text = $hashtagsStr . "\n" . $titleStr;
+    } else {
+        $text = $hashtagsStr . $titleStr;
+    }
     if (mb_strlen($text) > (int)$cfg['post']['textMax']) {
         $text = mb_substr($text, 0, (int)$cfg['post']['textMax']);
     }
@@ -73,11 +79,25 @@ try {
     @unlink($tweetPath);
     @unlink($preview);
 
+    // update state to avoid immediate scheduler double-post
+    $stateFile = __DIR__ . '/../data/meta/state.json';
+    $state = Util::readJson($stateFile, ['lastPostAt' => 0, 'fixedTimesConsumed' => []]);
+    $nowTs = time();
+    $state['lastPostAt'] = $nowTs;
+    $tz = new \DateTimeZone($cfg['timezone'] ?? 'Asia/Tokyo');
+    $date = (new \DateTimeImmutable('now', $tz))->format('Y-m-d');
+    foreach (($cfg['schedule']['fixedTimes'] ?? []) as $t) {
+        $key = $date . ' ' . $t;
+        $dt = new \DateTimeImmutable($key, $tz);
+        if ($dt->getTimestamp() <= $nowTs) { $state['fixedTimesConsumed'][$key] = true; }
+    }
+    Util::writeJson($stateFile, $state);
+
     Logger::post(['level' => 'info', 'event' => 'posted', 'imageId' => $id, 'file' => $item['file'], 'tweet' => $res]);
     Util::jsonResponse(['status' => 'ok', 'tweet' => $res]);
 } catch (\Throwable $e) {
     Logger::post(['level' => 'error', 'event' => 'post.fail', 'error' => $e->getMessage()]);
-    Util::jsonResponse(['error' => 'post_fail'], 500);
+    Util::jsonResponse(['error' => 'post_fail', 'message' => $e->getMessage()], 500);
 } finally {
     Lock::release('post.lock');
 }
