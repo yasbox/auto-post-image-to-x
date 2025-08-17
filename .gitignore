@@ -7,6 +7,9 @@ app/config/.env
 app/logs/*
 app/data/tmp/*
 app/data/inbox/*
+app/data/meta/queue.json
+app/data/meta/state.json
+app/data/meta/*.lock
 app/public/assets/*.map
 # Ensure vendored frontend assets are tracked
 !app/public/assets/vendor/
