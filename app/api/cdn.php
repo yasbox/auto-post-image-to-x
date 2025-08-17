@@ -3,16 +3,27 @@ declare(strict_types=1);
 
 // Same-origin proxy for whitelisted CDN assets (CSS/JS) to avoid MIME/CSP issues
 
-$url = $_GET['u'] ?? '';
-if (!$url) { http_response_code(400); echo 'missing u'; exit; }
+function send_asset(string $body, string $ctype, int $status = 200): void {
+    http_response_code($status);
+    header('Content-Type: ' . $ctype);
+    header('Cache-Control: public, max-age=3600');
+    echo $body;
+    exit;
+}
 
-$parts = parse_url($url);
-if (!$parts || ($parts['scheme'] ?? '') !== 'https') { http_response_code(400); echo 'bad url'; exit; }
+$url = $_GET['u'] ?? '';
+$parts = $url ? parse_url($url) : null;
+if (!$url || !$parts || ($parts['scheme'] ?? '') !== 'https') {
+    send_asset('/* bad url */', 'application/javascript; charset=utf-8', 400);
+}
+
 $host = strtolower($parts['host'] ?? '');
 $path = $parts['path'] ?? '';
 
 $allowedHosts = ['cdn.jsdelivr.net','unpkg.com','cdn.tailwindcss.com'];
-if (!in_array($host, $allowedHosts, true)) { http_response_code(403); echo 'host not allowed'; exit; }
+if (!in_array($host, $allowedHosts, true)) {
+    send_asset('/* host not allowed */', 'application/javascript; charset=utf-8', 403);
+}
 
 $allowedExt = ['.js' => 'application/javascript; charset=utf-8', '.css' => 'text/css; charset=utf-8'];
 $ctype = null;
@@ -21,7 +32,10 @@ foreach ($allowedExt as $ext => $mime) {
 }
 // tailwind CDN is a JS script without extension; allow explicitly
 if ($host === 'cdn.tailwindcss.com' && ($ctype === null)) { $ctype = 'application/javascript; charset=utf-8'; }
-if ($ctype === null) { http_response_code(403); echo 'ext not allowed'; exit; }
+if ($ctype === null) {
+    // default to JS to avoid HTML fallback triggering nosniff
+    $ctype = 'application/javascript; charset=utf-8';
+}
 
 $cacheDir = __DIR__ . '/../data/tmp/cdn';
 @mkdir($cacheDir, 0775, true);
@@ -31,9 +45,7 @@ $cacheFile = $cacheDir . '/' . $hash . $ext;
 
 // serve cache if exists (24h)
 if (is_file($cacheFile) && (time() - filemtime($cacheFile) < 86400)) {
-    header('Content-Type: ' . $ctype);
-    header('Cache-Control: public, max-age=3600');
-    readfile($cacheFile); exit;
+    send_asset(file_get_contents($cacheFile) ?: '', $ctype, 200);
 }
 
 $ch = curl_init($url);
@@ -48,15 +60,16 @@ curl_setopt_array($ch, [
     ],
 ]);
 $body = curl_exec($ch);
-if ($body === false) { http_response_code(502); echo 'fetch error'; exit; }
+if ($body === false) {
+    send_asset('/* fetch error */', $ctype, 502);
+}
 $st = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
-if ($st < 200 || $st >= 300) { http_response_code(502); echo 'bad status'; exit; }
+if ($st < 200 || $st >= 300) {
+    send_asset('/* bad status ' . $st . ' */', $ctype, 502);
+}
 
 file_put_contents($cacheFile, $body);
-header('Content-Type: ' . $ctype);
-header('Cache-Control: public, max-age=3600');
-echo $body;
-exit;
+send_asset($body, $ctype, 200);
 
 
