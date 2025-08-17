@@ -38,11 +38,11 @@ if (isset($_GET['logout'])) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>X Auto Poster Admin</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/dropzone@6.0.0-beta.2/dist/dropzone-min.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/photoswipe@5.3.8/dist/photoswipe.css" />
-  <script src="https://cdn.jsdelivr.net/npm/photoswipe@5.3.8/dist/photoswipe.umd.min.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/api/cdn.php?u=<?php echo urlencode('https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js'); ?>"></script>
+  <script src="/api/cdn.php?u=<?php echo urlencode('https://cdn.jsdelivr.net/npm/dropzone@6.0.0-beta.2/dist/dropzone-min.js'); ?>"></script>
+  <link rel="stylesheet" href="/api/cdn.php?u=<?php echo urlencode('https://cdn.jsdelivr.net/npm/photoswipe@5.3.8/dist/photoswipe.css'); ?>" />
+  <script src="/api/cdn.php?u=<?php echo urlencode('https://unpkg.com/photoswipe@5.3.8/dist/photoswipe.umd.min.js'); ?>"></script>
+  <script src="/api/cdn.php?u=<?php echo urlencode('https://cdn.tailwindcss.com'); ?>"></script>
   <link rel="stylesheet" href="./assets/app.css" />
 </head>
 <body class="bg-gray-100">
