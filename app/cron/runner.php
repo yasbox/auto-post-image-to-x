@@ -22,6 +22,7 @@ $nowTs = $now->getTimestamp();
 if (!Lock::acquire('post.lock')) { exit(0); }
 
 try {
+    if (isset($cfg['schedule']['enabled']) && !$cfg['schedule']['enabled']) { exit(0); }
     $due = false;
     $mode = $cfg['schedule']['mode'] ?? 'both';
 

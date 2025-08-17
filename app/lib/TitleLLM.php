@@ -10,7 +10,7 @@ final class TitleLLM
         $provider = $_ENV['LLM_PROVIDER'] ?? 'openai';
         $model = $_ENV['LLM_MODEL'] ?? 'gpt-4o-mini';
         $apiKey = $_ENV['OPENAI_API_KEY'] ?? '';
-        $prompt = 'Generate a concise English photo title. Max ' . (int)$titleCfg['maxChars'] . ' chars. Tone: ' . ($titleCfg['tone'] ?? 'neutral') . '. Avoid: ' . implode(', ', $ngWords);
+        $prompt = 'Generate a concise English photo title. Max ' . (int)$titleCfg['maxChars'] . ' chars. Tone: ' . ($titleCfg['tone'] ?? 'neutral') . '. Avoid: ' . implode(', ', $ngWords) . '. Respond with ONLY the title text. If you cannot produce a safe title, respond exactly with NONE.';
         try {
             $imgData = base64_encode(file_get_contents($previewPath));
             if ($provider === 'openai' && $apiKey) {
@@ -44,6 +44,9 @@ final class TitleLLM
                     $json = json_decode($res, true);
                     $text = $json['choices'][0]['message']['content'] ?? '';
                     $title = trim(preg_replace('/\s+/', ' ', $text));
+                    $lc = mb_strtolower($title);
+                    // Treat ONLY exact "NONE" as refusal to avoid false positives within real titles
+                    if ($lc === 'none') { return ''; }
                     $title = mb_substr($title, 0, (int)$titleCfg['maxChars']);
                     if ($title !== '') return $title;
                 }

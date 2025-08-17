@@ -40,6 +40,12 @@ $cfg = Settings::get();
 
     <section class="card p-5">
       <h2 class="font-semibold mb-3 tracking-tight">スケジュール</h2>
+      <div class="flex items-center mb-4">
+        <label class="inline-flex items-center gap-2">
+          <input type="checkbox" id="schedule_enabled" class="h-4 w-4">
+          <span class="text-sm text-gray-700">自動投稿を有効化</span>
+        </label>
+      </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
         <label class="block md:col-span-2">モード
           <select id="schedule_mode" class="border rounded p-2 w-full">
@@ -146,6 +152,7 @@ $cfg = Settings::get();
     }
 
     function loadIntoForm(cfg){
+      document.getElementById('schedule_enabled').checked = cfg.schedule.enabled !== false;
       document.getElementById('schedule_mode').value = cfg.schedule.mode;
       document.getElementById('interval').value = cfg.schedule.intervalMinutes;
       document.getElementById('fixed').value = (cfg.schedule.fixedTimes || []).join(', ');
@@ -173,6 +180,7 @@ $cfg = Settings::get();
         ...cur,
         schedule: {
           ...cur.schedule,
+          enabled: document.getElementById('schedule_enabled').checked,
           mode: document.getElementById('schedule_mode').value,
           fixedTimes: document.getElementById('fixed').value.split(',').map(s=>s.trim()).filter(Boolean),
           intervalMinutes: parseInt(document.getElementById('interval').value || '0', 10)

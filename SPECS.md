@@ -10,7 +10,7 @@ License: Private
 
 - 投稿成功後: 画像は完全削除
 - 投稿失敗: 画像は保持（通知/自動リトライなし）
-- キャプション: 英語タイトルをLLMで投稿直前に生成（画像は長辺500pxプレビューで渡す）
+- キャプション: 英語タイトルをLLMで投稿直前に生成（画像は長辺500pxプレビューで渡す）。失敗時はタイトル無し（ハッシュタグのみ）
 - ハッシュタグ: 設定済みリストからランダム1〜3個を先頭に付与
 - DB不使用: JSON + ファイルシステムで実装
 - 管理UI: アップロード（D&D/複数/チャンク）、一覧（PhotoSwipe v5）、D&D並べ替え（SortableJS）、削除、設定（保存ボタン式）
@@ -39,6 +39,7 @@ License: Private
     /app
       /public
         index.php            # 管理UI（ログイン必須）
+        settings.php         # 設定UI（フォームで編集/保存）
         /assets              # JS/CSS/ライブラリ（配布物）
       /api
         upload.php           # チャンク受付/結合/検証/登録
@@ -142,9 +143,14 @@ License: Private
     OPENAI_API_KEY=***
     LLM_PROVIDER=openai
     LLM_MODEL=gpt-4o-mini
+    # いずれか（または両方）
+    # OAuth2 ユーザーコンテキスト（任意・あれば使用）
     X_OAUTH2_ACCESS_TOKEN=***
-    X_CLIENT_ID=***
-    X_CLIENT_SECRET=***
+    # OAuth1.0a（メディアアップロードで必須）
+    X_API_KEY=***
+    X_API_SECRET=***
+    X_ACCESS_TOKEN=***
+    X_ACCESS_TOKEN_SECRET=***
 
 ### 4.3 tags.txt（例）
     photography
@@ -196,6 +202,7 @@ License: Private
 - 初期順: 追加日で新しいものが下（= 次回投稿が一番上）
 - ライトボックス: PhotoSwipe v5（width/height 属性を事前設定）
 - 並べ替え: SortableJS（D&D）→ 都度 /api/reorder で保存
+- アップロード: 右上のボタンから選択、または一覧領域へD&D（プレビューなし）
 - 検索/一括操作: なし
 
 ---
@@ -215,7 +222,7 @@ License: Private
         }
         Lock::release();
 
-成功時: lastPostAt 更新 / 固定時刻は当日消化フラグを立てる。
+成功時: lastPostAt 更新 / 固定時刻は当日消化フラグを立てる。手動投稿後も同様に state を更新し直後の重複投稿を回避。
 
 ---
 
@@ -227,9 +234,9 @@ License: Private
    - ImageProc::makeLLMPreview() で /data/tmp/llm/<id>.jpg を生成  
      ・長辺500px、JPEG quality=70、メタ削除  
    - TitleLLM::generate(previewPath, title設定, textMax, ngWords)  
-   - 失敗時は "Untitled" を使用  
+   - 失敗時はタイトル無し（空文字）  
 3) ハッシュタグ選定: tags.txt から 1〜3個（重複なし）をランダム抽出  
-4) 本文生成: 「#tag1 #tag2 #tag3 英語タイトル」（先頭にタグ + 半角スペース1つ）  
+4) 本文生成: 「#tag1 #tag2 #tag3 英語タイトル」（先頭にタグ + 半角スペース1つ。タイトル無し時はタグのみ）  
 5) 画像最適化（投稿用）: ImageProc::makeTweetImage(inboxPath, imagePolicy)
    - 入力: JPEG/PNG/WEBP
    - 出力: 常にJPEG（互換/容量重視）
@@ -258,12 +265,13 @@ License: Private
 - CSRF: 変更系エンドポイントはCSRFトークン必須。
 
 ### 10.2 エンドポイント
-- POST /api/upload … Dropzone互換（チャンク）
-- GET  /api/list   … {"items":[{"id","file","size","addedAt"}], "count":N}
+- POST /api/upload … Dropzone互換（チャンク）。単発アップロードも受理
+- GET  /api/list   … {"items":[{"id","file","size","addedAt","width","height"}], "count":N}
 - POST /api/reorder … {"order":["id1","id2",...]}
 - POST /api/delete  … {"id":"..."}
 - GET  /api/settings / POST /api/settings
 - POST /api/post-now … 手動1件投稿（排他ロック尊重）
+- GET  /api/file    … 画像バイナリを同一オリジンで配信（例: ?id=...）
 
 すべて同一オリジン / HTTPS必須 / JSONレスポンス。
 

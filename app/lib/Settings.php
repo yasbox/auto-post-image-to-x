@@ -34,6 +34,7 @@ final class Settings
         return [
             'timezone' => 'Asia/Tokyo',
             'schedule' => [
+                'enabled' => true,
                 'mode' => 'both',
                 'fixedTimes' => ['09:00', '13:00', '21:00'],
                 'intervalMinutes' => 480,
