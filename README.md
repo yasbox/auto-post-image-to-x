@@ -22,7 +22,10 @@ docker compose up -d --build
 # docker compose exec php chown -R www-data:www-data /var/www/app/data /var/www/app/logs
 
 # ブラウザで http://localhost:8080/ にアクセス
-# 既定ログイン: パスワードは app/config/password.json のハッシュを生成して差し替えてください
+# 初回ログイン手引き:
+#   - `app/config/password.json` が未作成の場合、デフォルトパスワードは "changeme" です
+#   - ログイン後、設定画面からパスワードを変更し、`app/config/password.json` を作成してください
+#   - 例: `cp app/config/password.example.json app/config/password.json` の上で、"hash" をご自身の bcrypt ハッシュに置換
 ```
 
 ### 初期セットアップ（設定ファイルの配置）
