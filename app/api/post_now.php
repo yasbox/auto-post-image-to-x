@@ -1,0 +1,85 @@
+<?php
+declare(strict_types=1);
+
+use App\Lib\Auth;
+use App\Lib\Csrf;
+use App\Lib\ImageProc;
+use App\Lib\Lock;
+use App\Lib\Logger;
+use App\Lib\Queue;
+use App\Lib\Settings;
+use App\Lib\TitleLLM;
+use App\Lib\Util;
+use App\Lib\XClient;
+
+require_once __DIR__ . '/../lib/bootstrap.php';
+
+session_name(Settings::security('sessionName'));
+session_start();
+if (!Auth::isLoggedIn()) Util::jsonResponse(['error' => 'auth'], 401);
+Csrf::validate();
+
+if (!Lock::acquire('post.lock')) Util::jsonResponse(['error' => 'locked'], 423);
+
+try {
+    $cfg = Settings::get();
+    $q = Queue::get();
+    $item = $q['items'][0] ?? null;
+    if (!$item) Util::jsonResponse(['status' => 'empty']);
+    $id = $item['id'];
+    $inboxPath = __DIR__ . '/../data/inbox/' . $item['file'];
+
+    // 2) LLM title
+    $preview = ImageProc::makeLLMPreview($inboxPath, $cfg['imagePolicy'], $id);
+    $title = TitleLLM::generate($preview, $cfg['post']['title'], (int)$cfg['post']['textMax'], $cfg['post']['title']['ngWords'] ?? []);
+
+    // 3) hashtags
+    $tagsFile = __DIR__ . '/../config/' . ($cfg['post']['hashtags']['source'] ?? 'tags.txt');
+    $tags = array_values(array_filter(array_map('trim', file_exists($tagsFile) ? file($tagsFile) : [])));
+    shuffle($tags);
+    $min = (int)$cfg['post']['hashtags']['min'];
+    $max = (int)$cfg['post']['hashtags']['max'];
+    $num = max($min, min($max, random_int($min, $max)));
+    $picked = array_slice($tags, 0, $num);
+    $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', $t), $picked);
+
+    // 4) text
+    $text = trim(implode(' ', $hashtags) . ' ' . $title);
+    if (mb_strlen($text) > (int)$cfg['post']['textMax']) {
+        $text = mb_substr($text, 0, (int)$cfg['post']['textMax']);
+    }
+
+    // 5) image optimize
+    try {
+        $tweetPath = ImageProc::makeTweetImage($inboxPath, $cfg['imagePolicy'], $id);
+    } catch (\Throwable $e) {
+        Logger::post(['level' => 'error', 'event' => 'optimize.fail', 'imageId' => $id, 'file' => $item['file'], 'error' => $e->getMessage()]);
+        Util::jsonResponse(['error' => 'optimize_fail'], 500);
+    }
+
+    // 6-7) X upload + post
+    $client = new XClient();
+    $mediaId = $client->uploadMedia($tweetPath);
+    $res = $client->postTweet($text, $mediaId);
+
+    // 8) cleanup
+    if (!empty($cfg['post']['deleteOriginalOnSuccess'])) {
+        @unlink($inboxPath);
+    }
+    array_shift($q['items']);
+    Queue::save($q);
+
+    // tmp cleanup
+    @unlink($tweetPath);
+    @unlink($preview);
+
+    Logger::post(['level' => 'info', 'event' => 'posted', 'imageId' => $id, 'file' => $item['file'], 'tweet' => $res]);
+    Util::jsonResponse(['status' => 'ok', 'tweet' => $res]);
+} catch (\Throwable $e) {
+    Logger::post(['level' => 'error', 'event' => 'post.fail', 'error' => $e->getMessage()]);
+    Util::jsonResponse(['error' => 'post_fail'], 500);
+} finally {
+    Lock::release('post.lock');
+}
+
+

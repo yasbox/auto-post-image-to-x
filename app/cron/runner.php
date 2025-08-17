@@ -1,0 +1,100 @@
+<?php
+declare(strict_types=1);
+
+use App\Lib\ImageProc;
+use App\Lib\Lock;
+use App\Lib\Logger;
+use App\Lib\Queue;
+use App\Lib\Settings;
+use App\Lib\TitleLLM;
+use App\Lib\Util;
+use App\Lib\XClient;
+
+require_once __DIR__ . '/../lib/bootstrap.php';
+
+// Simple state file to track last post and fixed time consumption
+$stateFile = __DIR__ . '/../data/meta/state.json';
+$state = Util::readJson($stateFile, ['lastPostAt' => 0, 'fixedTimesConsumed' => []]);
+$cfg = Settings::get();
+$now = Util::now($cfg['timezone']);
+$nowTs = $now->getTimestamp();
+
+if (!Lock::acquire('post.lock')) { exit(0); }
+
+try {
+    $due = false;
+    $mode = $cfg['schedule']['mode'] ?? 'both';
+
+    // Fixed times
+    $date = $now->format('Y-m-d');
+    if ($mode === 'fixed' || $mode === 'both') {
+        foreach ($cfg['schedule']['fixedTimes'] as $t) {
+            $dt = new DateTimeImmutable($date . ' ' . $t, new DateTimeZone($cfg['timezone']));
+            $key = $date . ' ' . $t;
+            if (($state['fixedTimesConsumed'][$key] ?? false) === true) continue;
+            if ($nowTs >= $dt->getTimestamp()) { $due = true; $state['fixedTimesConsumed'][$key] = true; break; }
+        }
+    }
+
+    // Interval
+    if (!$due && ($mode === 'interval' || $mode === 'both')) {
+        $interval = (int)($cfg['schedule']['intervalMinutes'] ?? 0) * 60;
+        if ($interval > 0 && ($nowTs - (int)$state['lastPostAt']) >= $interval) {
+            $due = true;
+        }
+    }
+
+    if (!$due) { exit(0); }
+
+    // Load queue head
+    $q = Queue::get();
+    $item = $q['items'][0] ?? null;
+    if (!$item) { exit(0); }
+    $id = $item['id'];
+    $inboxPath = __DIR__ . '/../data/inbox/' . $item['file'];
+
+    // Title
+    $preview = ImageProc::makeLLMPreview($inboxPath, $cfg['imagePolicy'], $id);
+    $title = TitleLLM::generate($preview, $cfg['post']['title'], (int)$cfg['post']['textMax'], $cfg['post']['title']['ngWords'] ?? []);
+
+    // Hashtags
+    $tagsFile = __DIR__ . '/../config/' . ($cfg['post']['hashtags']['source'] ?? 'tags.txt');
+    $tags = array_values(array_filter(array_map('trim', file_exists($tagsFile) ? file($tagsFile) : [])));
+    shuffle($tags);
+    $min = (int)$cfg['post']['hashtags']['min'];
+    $max = (int)$cfg['post']['hashtags']['max'];
+    $num = max($min, min($max, random_int($min, $max)));
+    $picked = array_slice($tags, 0, $num);
+    $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', $t), $picked);
+    $text = trim(implode(' ', $hashtags) . ' ' . $title);
+    if (mb_strlen($text) > (int)$cfg['post']['textMax']) $text = mb_substr($text, 0, (int)$cfg['post']['textMax']);
+
+    // Image
+    try { $tweetPath = ImageProc::makeTweetImage($inboxPath, $cfg['imagePolicy'], $id); }
+    catch (Throwable $e) {
+        Logger::post(['level' => 'error', 'event' => 'optimize.fail', 'imageId' => $id, 'file' => $item['file'], 'error' => $e->getMessage()]);
+        exit(0);
+    }
+
+    // Post
+    try {
+        $client = new XClient();
+        $mediaId = $client->uploadMedia($tweetPath);
+        $res = $client->postTweet($text, $mediaId);
+        if (!empty($cfg['post']['deleteOriginalOnSuccess'])) @unlink($inboxPath);
+        array_shift($q['items']);
+        Queue::save($q);
+        @unlink($tweetPath);
+        @unlink($preview);
+        $state['lastPostAt'] = $nowTs;
+        Logger::post(['level' => 'info', 'event' => 'posted', 'imageId' => $id, 'file' => $item['file'], 'tweet' => $res]);
+    } catch (Throwable $e) {
+        Logger::post(['level' => 'error', 'event' => 'post.fail', 'imageId' => $id, 'file' => $item['file'], 'error' => $e->getMessage()]);
+    }
+
+    Util::writeJson($stateFile, $state);
+} finally {
+    Lock::release('post.lock');
+}
+
+

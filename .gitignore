@@ -1,0 +1,13 @@
+node_modules/
+.DS_Store
+vendor/
+*.log
+app/config/.env
+app/logs/*
+app/data/tmp/*
+app/data/inbox/*
+app/public/assets/*.map
+.idea/
+.vscode/
+
+
