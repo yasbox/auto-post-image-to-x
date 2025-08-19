@@ -29,9 +29,13 @@ try {
     $id = $item['id'];
     $inboxPath = __DIR__ . '/../data/inbox/' . $item['file'];
 
-    // 2) LLM title
-    $preview = ImageProc::makeLLMPreview($inboxPath, $cfg['imagePolicy'], $id);
-    $title = TitleLLM::generate($preview, $cfg['post']['title'], (int)$cfg['post']['textMax'], $cfg['post']['title']['ngWords'] ?? []);
+    // 2) LLM title (optional)
+    $preview = null;
+    $title = '';
+    if (!isset($cfg['post']['title']['enabled']) || $cfg['post']['title']['enabled']) {
+        $preview = ImageProc::makeLLMPreview($inboxPath, $cfg['imagePolicy'], $id);
+        $title = TitleLLM::generate($preview, $cfg['post']['title'], (int)$cfg['post']['textMax'], $cfg['post']['title']['ngWords'] ?? []);
+    }
 
     // 3) hashtags
     $tagsFile = __DIR__ . '/../config/' . ($cfg['post']['hashtags']['source'] ?? 'tags.txt');
@@ -77,20 +81,29 @@ try {
 
     // tmp cleanup
     @unlink($tweetPath);
-    @unlink($preview);
+    if (!empty($preview)) { @unlink($preview); }
 
     // update state to avoid immediate scheduler double-post
     $stateFile = __DIR__ . '/../data/meta/state.json';
-    $state = Util::readJson($stateFile, ['lastPostAt' => 0, 'fixedTimesConsumed' => []]);
+    $state = Util::readJson($stateFile, ['lastPostAt' => 0, 'lastFixedSlotTs' => 0, 'scheduleHash' => '']);
     $nowTs = time();
     $state['lastPostAt'] = $nowTs;
     $tz = new \DateTimeZone($cfg['timezone'] ?? 'Asia/Tokyo');
     $date = (new \DateTimeImmutable('now', $tz))->format('Y-m-d');
+    // Mark the latest fixed-time slot up to now as consumed, so scheduler won't double-post
+    $slots = [];
     foreach (($cfg['schedule']['fixedTimes'] ?? []) as $t) {
-        $key = $date . ' ' . $t;
-        $dt = new \DateTimeImmutable($key, $tz);
-        if ($dt->getTimestamp() <= $nowTs) { $state['fixedTimesConsumed'][$key] = true; }
+        $dt = new \DateTimeImmutable($date . ' ' . $t, $tz);
+        $slots[] = $dt->getTimestamp();
     }
+    sort($slots);
+    $lastFixed = (int)($state['lastFixedSlotTs'] ?? 0);
+    foreach ($slots as $slotTs) {
+        if ($slotTs <= $nowTs && $slotTs > $lastFixed) {
+            $lastFixed = $slotTs;
+        }
+    }
+    $state['lastFixedSlotTs'] = $lastFixed;
     Util::writeJson($stateFile, $state);
 
     Logger::post(['level' => 'info', 'event' => 'posted', 'imageId' => $id, 'file' => $item['file'], 'tweet' => $res]);

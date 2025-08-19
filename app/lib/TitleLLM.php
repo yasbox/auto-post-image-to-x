@@ -10,7 +10,14 @@ final class TitleLLM
         $provider = $_ENV['LLM_PROVIDER'] ?? 'openai';
         $model = $_ENV['LLM_MODEL'] ?? 'gpt-4o-mini';
         $apiKey = $_ENV['OPENAI_API_KEY'] ?? '';
-        $prompt = 'Generate a concise English photo title. Max ' . (int)$titleCfg['maxChars'] . ' chars. Tone: ' . ($titleCfg['tone'] ?? 'neutral') . '. Avoid: ' . implode(', ', $ngWords) . '. Respond with ONLY the title text. If you cannot produce a safe title, respond exactly with NONE.';
+        $language = $titleCfg['language'] ?? 'en';
+        $prompt = 'Generate a short, tasteful, and minimalist photo title in ' . $language . '. '
+            . 'Do not literally describe the visible content; prefer subtle, evocative wording with a bit of style. '
+            . 'Keep it simple and punchy. Max ' . (int)$titleCfg['maxChars'] . ' chars. '
+            . 'Tone: ' . ($titleCfg['tone'] ?? 'neutral') . '. '
+            . 'Avoid: ' . implode(', ', $ngWords) . '. '
+            . 'Do not use hashtags, emojis, or quotation marks. '
+            . 'Respond with ONLY the title text. If you cannot produce a safe title, respond exactly with NONE.';
         try {
             $imgData = base64_encode(file_get_contents($previewPath));
             if ($provider === 'openai' && $apiKey) {

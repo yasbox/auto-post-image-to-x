@@ -39,4 +39,18 @@ if (is_file($base . '/config/.env')) {
     }
 }
 
+// Configure session persistence (30 days)
+$secure = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on';
+@ini_set('session.gc_maxlifetime', (string)(60 * 60 * 24 * 30));
+if (function_exists('session_set_cookie_params')) {
+    session_set_cookie_params([
+        'lifetime' => 60 * 60 * 24 * 30,
+        'path' => '/',
+        'domain' => '',
+        'secure' => $secure,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+}
+
 

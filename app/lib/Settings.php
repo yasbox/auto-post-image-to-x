@@ -49,6 +49,7 @@ final class Settings
             ],
             'post' => [
                 'title' => [
+                    'enabled' => true,
                     'language' => 'en',
                     'maxChars' => 80,
                     'tone' => 'neutral',

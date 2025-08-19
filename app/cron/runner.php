@@ -12,9 +12,15 @@ use App\Lib\XClient;
 
 require_once __DIR__ . '/../lib/bootstrap.php';
 
-// Simple state file to track last post and fixed time consumption
+// Simple state file to track last post and fixed-time scheduling state
 $stateFile = __DIR__ . '/../data/meta/state.json';
-$state = Util::readJson($stateFile, ['lastPostAt' => 0, 'fixedTimesConsumed' => []]);
+$state = Util::readJson($stateFile, [
+    'lastPostAt' => 0,
+    // Timestamp (epoch seconds) of the last executed fixed-time slot
+    'lastFixedSlotTs' => 0,
+    // Hash of schedule relevant fields to detect changes and avoid catch-up
+    'scheduleHash' => ''
+]);
 $cfg = Settings::get();
 $now = Util::now($cfg['timezone']);
 $nowTs = $now->getTimestamp();
@@ -26,14 +32,37 @@ try {
     $due = false;
     $mode = $cfg['schedule']['mode'] ?? 'both';
 
-    // Fixed times
+    // Fixed times (timestamp-based, with schedule change detection)
     $date = $now->format('Y-m-d');
     if ($mode === 'fixed' || $mode === 'both') {
-        foreach ($cfg['schedule']['fixedTimes'] as $t) {
+        $fixedTimes = $cfg['schedule']['fixedTimes'] ?? [];
+        $scheduleHashNow = hash('sha256', json_encode([
+            'tz' => $cfg['timezone'] ?? 'UTC',
+            'times' => $fixedTimes,
+        ]));
+
+        // If schedule changed (times or timezone), advance baseline to now to avoid catch-up posts
+        if (($state['scheduleHash'] ?? '') !== $scheduleHashNow) {
+            $state['scheduleHash'] = $scheduleHashNow;
+            $state['lastFixedSlotTs'] = $nowTs;
+            // Persist immediately so the new baseline sticks even if no post occurs in this run
+            Util::writeJson($stateFile, $state);
+        }
+
+        // Build today's slot timestamps and pick the earliest slot that is > lastFixedSlotTs and <= now
+        $slots = [];
+        foreach ($fixedTimes as $t) {
             $dt = new DateTimeImmutable($date . ' ' . $t, new DateTimeZone($cfg['timezone']));
-            $key = $date . ' ' . $t;
-            if (($state['fixedTimesConsumed'][$key] ?? false) === true) continue;
-            if ($nowTs >= $dt->getTimestamp()) { $due = true; $state['fixedTimesConsumed'][$key] = true; break; }
+            $slots[] = $dt->getTimestamp();
+        }
+        sort($slots);
+        $lastFixedSlotTs = (int)($state['lastFixedSlotTs'] ?? 0);
+        foreach ($slots as $slotTs) {
+            if ($slotTs > $lastFixedSlotTs && $slotTs <= $nowTs) {
+                $due = true;
+                $state['lastFixedSlotTs'] = $slotTs; // mark the consumed slot for today
+                break;
+            }
         }
     }
 
@@ -54,9 +83,13 @@ try {
     $id = $item['id'];
     $inboxPath = __DIR__ . '/../data/inbox/' . $item['file'];
 
-    // Title
-    $preview = ImageProc::makeLLMPreview($inboxPath, $cfg['imagePolicy'], $id);
-    $title = TitleLLM::generate($preview, $cfg['post']['title'], (int)$cfg['post']['textMax'], $cfg['post']['title']['ngWords'] ?? []);
+    // Title (optional)
+    $preview = null;
+    $title = '';
+    if (!isset($cfg['post']['title']['enabled']) || $cfg['post']['title']['enabled']) {
+        $preview = ImageProc::makeLLMPreview($inboxPath, $cfg['imagePolicy'], $id);
+        $title = TitleLLM::generate($preview, $cfg['post']['title'], (int)$cfg['post']['textMax'], $cfg['post']['title']['ngWords'] ?? []);
+    }
 
     // Hashtags
     $tagsFile = __DIR__ . '/../config/' . ($cfg['post']['hashtags']['source'] ?? 'tags.txt');
@@ -92,7 +125,7 @@ try {
         array_shift($q['items']);
         Queue::save($q);
         @unlink($tweetPath);
-        @unlink($preview);
+        if (!empty($preview)) { @unlink($preview); }
         $state['lastPostAt'] = $nowTs;
         Logger::post(['level' => 'info', 'event' => 'posted', 'imageId' => $id, 'file' => $item['file'], 'tweet' => $res]);
     } catch (Throwable $e) {

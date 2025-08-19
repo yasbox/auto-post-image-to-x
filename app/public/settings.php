@@ -13,6 +13,7 @@ session_start([
     'cookie_httponly' => true,
     'cookie_samesite' => 'Lax',
     'cookie_secure' => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on',
+    'cookie_lifetime' => 60 * 60 * 24 * 30,
 ]);
 
 if (!Auth::isLoggedIn()) { header('Location: /'); exit; }
@@ -81,6 +82,12 @@ $cfg = Settings::get();
     <section class="card p-5">
       <h2 class="font-semibold mb-3 tracking-tight">投稿テキスト</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <label class="block md:col-span-2">
+          <span class="inline-flex items-center gap-2">
+            <input type="checkbox" id="title_enabled" class="h-4 w-4" />
+            <span>OpenAIでタイトル生成を有効化</span>
+          </span>
+        </label>
         <label class="block">タイトル最大文字数
           <input type="number" id="title_max" class="border rounded p-2 w-full" />
         </label>
@@ -162,6 +169,7 @@ $cfg = Settings::get();
       document.getElementById('title_max').value = cfg.post.title.maxChars;
       document.getElementById('title_tone').value = cfg.post.title.tone;
       document.getElementById('title_ng').value = (cfg.post.title.ngWords || []).join(', ');
+      document.getElementById('title_enabled').checked = (cfg.post.title.enabled !== false);
       document.getElementById('textMax').value = cfg.post.textMax;
       document.getElementById('tag_min').value = cfg.post.hashtags.min;
       document.getElementById('tag_max').value = cfg.post.hashtags.max;
@@ -195,6 +203,7 @@ $cfg = Settings::get();
           ...cur.post,
           title: {
             ...cur.post.title,
+            enabled: document.getElementById('title_enabled').checked,
             maxChars: parseInt(document.getElementById('title_max').value || '0', 10),
             tone: document.getElementById('title_tone').value,
             ngWords: document.getElementById('title_ng').value.split(',').map(s=>s.trim()).filter(Boolean)

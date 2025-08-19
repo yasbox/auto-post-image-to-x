@@ -19,6 +19,6 @@ RUN docker-php-ext-configure gd \
 
 WORKDIR /var/www
 
-CMD ["bash", "-lc", "while true; do php /var/www/app/cron/runner.php || true; sleep 60; done"]
+CMD ["bash", "-lc", "while true; do php /var/www/app/cron/runner.php || true; sleep 300; done"]
 
 
