@@ -29,23 +29,27 @@ try {
     $id = $item['id'];
     $inboxPath = __DIR__ . '/../data/inbox/' . $item['file'];
 
-    // 2) LLM title (optional)
+    // 2) Title & hashtags
     $preview = null;
     $title = '';
-    if (!isset($cfg['post']['title']['enabled']) || $cfg['post']['title']['enabled']) {
-        $preview = ImageProc::makeLLMPreview($inboxPath, $cfg['imagePolicy'], $id);
-        $title = TitleLLM::generate($preview, $cfg['post']['title'], (int)$cfg['post']['textMax'], $cfg['post']['title']['ngWords'] ?? []);
-    }
-
-    // 3) hashtags
+    $hashtags = [];
     $tagsFile = __DIR__ . '/../config/' . ($cfg['post']['hashtags']['source'] ?? 'tags.txt');
     $tags = array_values(array_filter(array_map('trim', file_exists($tagsFile) ? file($tagsFile) : [])));
-    shuffle($tags);
     $min = (int)$cfg['post']['hashtags']['min'];
     $max = (int)$cfg['post']['hashtags']['max'];
     $num = max($min, min($max, random_int($min, $max)));
-    $picked = array_slice($tags, 0, $num);
-    $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', $t), $picked);
+    if (!isset($cfg['post']['title']['enabled']) || $cfg['post']['title']['enabled']) {
+        $preview = ImageProc::makeLLMPreview($inboxPath, $cfg['imagePolicy'], $id);
+        $both = TitleLLM::generateAndPickTags($preview, $cfg['post']['title'], (int)$cfg['post']['textMax'], $cfg['post']['title']['ngWords'] ?? [], $tags, $num);
+        $title = trim((string)($both['title'] ?? ''));
+        $picked = is_array($both['tags'] ?? null) ? $both['tags'] : [];
+        $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', (string)$t), $picked);
+    } else {
+        // LLM disabled: old behavior (random hashtags only)
+        shuffle($tags);
+        $picked = array_slice($tags, 0, $num);
+        $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', (string)$t), $picked);
+    }
 
     // 4) text (hashtags + newline + title)
     $hashtagsStr = trim(implode(' ', $hashtags));

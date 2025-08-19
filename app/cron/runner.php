@@ -83,23 +83,26 @@ try {
     $id = $item['id'];
     $inboxPath = __DIR__ . '/../data/inbox/' . $item['file'];
 
-    // Title (optional)
+    // Title & Hashtags (single LLM call when enabled)
     $preview = null;
     $title = '';
-    if (!isset($cfg['post']['title']['enabled']) || $cfg['post']['title']['enabled']) {
-        $preview = ImageProc::makeLLMPreview($inboxPath, $cfg['imagePolicy'], $id);
-        $title = TitleLLM::generate($preview, $cfg['post']['title'], (int)$cfg['post']['textMax'], $cfg['post']['title']['ngWords'] ?? []);
-    }
-
-    // Hashtags
+    $hashtags = [];
     $tagsFile = __DIR__ . '/../config/' . ($cfg['post']['hashtags']['source'] ?? 'tags.txt');
     $tags = array_values(array_filter(array_map('trim', file_exists($tagsFile) ? file($tagsFile) : [])));
-    shuffle($tags);
-    $min = (int)$cfg['post']['hashtags']['min'];
-    $max = (int)$cfg['post']['hashtags']['max'];
+    $min = (int)($cfg['post']['hashtags']['min'] ?? 0);
+    $max = (int)($cfg['post']['hashtags']['max'] ?? 0);
     $num = max($min, min($max, random_int($min, $max)));
-    $picked = array_slice($tags, 0, $num);
-    $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', $t), $picked);
+    if (!isset($cfg['post']['title']['enabled']) || $cfg['post']['title']['enabled']) {
+        $preview = ImageProc::makeLLMPreview($inboxPath, $cfg['imagePolicy'], $id);
+        $both = TitleLLM::generateAndPickTags($preview, $cfg['post']['title'], (int)$cfg['post']['textMax'], $cfg['post']['title']['ngWords'] ?? [], $tags, $num);
+        $title = trim((string)($both['title'] ?? ''));
+        $picked = is_array($both['tags'] ?? null) ? $both['tags'] : [];
+        $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', (string)$t), $picked);
+    } else {
+        shuffle($tags);
+        $picked = array_slice($tags, 0, $num);
+        $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', (string)$t), $picked);
+    }
     $hashtagsStr = trim(implode(' ', $hashtags));
     $titleStr = trim((string)($title ?? ''));
     if ($hashtagsStr !== '' && $titleStr !== '') {
@@ -107,7 +110,9 @@ try {
     } else {
         $text = $hashtagsStr . $titleStr;
     }
-    if (mb_strlen($text) > (int)$cfg['post']['textMax']) $text = mb_substr($text, 0, (int)$cfg['post']['textMax']);
+    if (mb_strlen($text) > (int)$cfg['post']['textMax']) {
+        $text = mb_substr($text, 0, (int)$cfg['post']['textMax']);
+    }
 
     // Image
     try { $tweetPath = ImageProc::makeTweetImage($inboxPath, $cfg['imagePolicy'], $id); }

@@ -5,22 +5,42 @@ namespace App\Lib;
 
 final class TitleLLM
 {
-    public static function generate(string $previewPath, array $titleCfg, int $textMax, array $ngWords): string
+    // Removed generate() and pickTags() as code now uses generateAndPickTags() in a single call
+
+    /**
+     * Generate title and pick suitable tags in a single LLM call.
+     * Returns ['title' => string, 'tags' => string[]]. On failure, returns empty title and [] tags.
+     */
+    public static function generateAndPickTags(string $previewPath, array $titleCfg, int $textMax, array $ngWords, array $candidates, int $num): array
     {
         $provider = $_ENV['LLM_PROVIDER'] ?? 'openai';
         $model = $_ENV['LLM_MODEL'] ?? 'gpt-4o-mini';
         $apiKey = $_ENV['OPENAI_API_KEY'] ?? '';
         $language = $titleCfg['language'] ?? 'en';
-        $prompt = 'Generate a short, tasteful, and minimalist photo title in ' . $language . '. '
-            . 'Do not literally describe the visible content; prefer subtle, evocative wording with a bit of style. '
-            . 'Keep it simple and punchy. Max ' . (int)$titleCfg['maxChars'] . ' chars. '
-            . 'Tone: ' . ($titleCfg['tone'] ?? 'neutral') . '. '
-            . 'Avoid: ' . implode(', ', $ngWords) . '. '
-            . 'Do not use hashtags, emojis, or quotation marks. '
-            . 'Respond with ONLY the title text. If you cannot produce a safe title, respond exactly with NONE.';
+        $maxTitle = (int)($titleCfg['maxChars'] ?? 80);
+        $tone = (string)($titleCfg['tone'] ?? 'neutral');
+        $num = max(0, (int)$num);
         try {
             $imgData = base64_encode(file_get_contents($previewPath));
             if ($provider === 'openai' && $apiKey) {
+                // normalize candidate tags (strip #, collapse spaces)
+                $candidates = array_values(array_filter(array_map(static function ($t) {
+                    $t = trim((string)$t);
+                    if ($t === '') return null;
+                    $t = ltrim($t, '#');
+                    return preg_replace('/\s+/', ' ', $t);
+                }, $candidates)));
+                $maxList = 500;
+                if (count($candidates) > $maxList) {
+                    $candidates = array_slice($candidates, 0, $maxList);
+                }
+                $listText = json_encode($candidates, JSON_UNESCAPED_UNICODE);
+                $prompt = 'Task: Create a short, tasteful, minimalist photo title and select relevant tags, using the given candidate tag list.' . "\n"
+                    . 'Language: ' . $language . ".\n"
+                    . 'Title rules: subtle/evocative, not a literal description, tone ' . $tone . ', max ' . $maxTitle . ' chars, avoid: ' . implode(', ', $ngWords) . '. No hashtags, emojis, or quotes.' . "\n"
+                    . 'Tags rules: choose at most ' . $num . ' tags ONLY from the candidate list. Do not invent tags. Exclude the # symbol. If none are appropriate, use an empty array.' . "\n"
+                    . 'Output format: JSON object with exactly these keys: {"title": string, "tags": string[]}. No extra text.' . "\n"
+                    . 'Candidates (JSON array): ' . $listText;
                 $payload = [
                     'model' => $model,
                     'messages' => [[
@@ -30,7 +50,7 @@ final class TitleLLM
                             ['type' => 'image_url', 'image_url' => ['url' => 'data:image/jpeg;base64,' . $imgData]],
                         ],
                     ]],
-                    'max_tokens' => 50,
+                    'max_tokens' => 200,
                 ];
                 $ch = curl_init('https://api.openai.com/v1/chat/completions');
                 curl_setopt_array($ch, [
@@ -49,20 +69,41 @@ final class TitleLLM
                 curl_close($ch);
                 if ($st >= 200 && $st < 300) {
                     $json = json_decode($res, true);
-                    $text = $json['choices'][0]['message']['content'] ?? '';
-                    $title = trim(preg_replace('/\s+/', ' ', $text));
-                    $lc = mb_strtolower($title);
-                    // Treat ONLY exact "NONE" as refusal to avoid false positives within real titles
-                    if ($lc === 'none') { return ''; }
-                    $title = mb_substr($title, 0, (int)$titleCfg['maxChars']);
-                    if ($title !== '') return $title;
+                    $text = (string)($json['choices'][0]['message']['content'] ?? '');
+                    $trimmed = trim($text);
+                    // Try parse JSON object
+                    $parsed = json_decode($trimmed, true);
+                    if (!is_array($parsed)) {
+                        if (preg_match('/\{[\s\S]*\}/', $trimmed, $m)) {
+                            $parsed = json_decode($m[0], true);
+                        }
+                    }
+                    $outTitle = '';
+                    $outTags = [];
+                    if (is_array($parsed)) {
+                        $t = (string)($parsed['title'] ?? '');
+                        $lc = mb_strtolower(trim($t));
+                        if ($lc !== 'none') {
+                            $t = trim(preg_replace('/\s+/', ' ', $t));
+                            $t = mb_substr($t, 0, $maxTitle);
+                            $outTitle = $t;
+                        }
+                        $tagsArr = is_array($parsed['tags'] ?? null) ? $parsed['tags'] : [];
+                        foreach ($tagsArr as $tg) {
+                            if (!is_string($tg)) continue;
+                            $tg = trim(ltrim($tg, '#'));
+                            if ($tg === '') continue;
+                            $outTags[] = $tg;
+                            if (count($outTags) >= $num) break;
+                        }
+                        return ['title' => $outTitle, 'tags' => $outTags];
+                    }
                 }
             }
         } catch (\Throwable $e) {
             // fallthrough
         }
-        // Fallback: no title (hashtags only)
-        return '';
+        return ['title' => '', 'tags' => []];
     }
 }
 
