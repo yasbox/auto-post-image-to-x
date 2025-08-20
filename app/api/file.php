@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 use App\Lib\Auth;
 use App\Lib\Queue;
+use App\Lib\Failed;
 use App\Lib\Settings;
 
 require_once __DIR__ . '/../lib/bootstrap.php';
@@ -15,6 +16,10 @@ $id = $_GET['id'] ?? '';
 $q = Queue::get();
 $found = null;
 foreach ($q['items'] as $it) if ($it['id'] === $id) { $found = $it; break; }
+if (!$found) {
+    $f = Failed::get();
+    foreach ($f['items'] as $it) if (($it['id'] ?? '') === $id) { $found = $it; break; }
+}
 if (!$found) { http_response_code(404); exit; }
 
 $path = __DIR__ . '/../data/inbox/' . $found['file'];

@@ -7,6 +7,7 @@ use App\Lib\ImageProc;
 use App\Lib\Lock;
 use App\Lib\Logger;
 use App\Lib\Queue;
+use App\Lib\Failed;
 use App\Lib\Settings;
 use App\Lib\TitleLLM;
 use App\Lib\Util;
@@ -68,6 +69,16 @@ try {
         $tweetPath = ImageProc::makeTweetImage($inboxPath, $cfg['imagePolicy'], $id);
     } catch (\Throwable $e) {
         Logger::post(['level' => 'error', 'event' => 'optimize.fail', 'imageId' => $id, 'file' => $item['file'], 'error' => $e->getMessage()]);
+        // move to failed, remove from queue, keep original
+        Failed::append($id, $item['file'], 'optimize', $e->getMessage());
+        \App\Lib\Logger::op(['event' => 'failed.append', 'imageId' => $id, 'file' => $item['file'], 'stage' => 'optimize']);
+        array_shift($q['items']);
+        Queue::save($q);
+        // also advance scheduling state to avoid double attempts
+        $stateFile = __DIR__ . '/../data/meta/state.json';
+        $state = Util::readJson($stateFile, ['lastPostAt' => 0, 'lastFixedSlotTs' => 0, 'scheduleHash' => '']);
+        $state['lastPostAt'] = time();
+        Util::writeJson($stateFile, $state);
         Util::jsonResponse(['error' => 'optimize_fail'], 500);
     }
 
@@ -113,7 +124,25 @@ try {
     Logger::post(['level' => 'info', 'event' => 'posted', 'imageId' => $id, 'file' => $item['file'], 'tweet' => $res]);
     Util::jsonResponse(['status' => 'ok', 'tweet' => $res]);
 } catch (\Throwable $e) {
-    Logger::post(['level' => 'error', 'event' => 'post.fail', 'error' => $e->getMessage()]);
+    // enrich log with image info when available
+    $log = ['level' => 'error', 'event' => 'post.fail', 'error' => $e->getMessage()];
+    if (isset($item) && isset($item['id'], $item['file'])) { $log['imageId'] = $item['id']; $log['file'] = $item['file']; }
+    Logger::post($log);
+    // move to failed list and remove from queue
+    if (isset($item) && isset($item['id'], $item['file'])) {
+        Failed::append($item['id'], $item['file'], 'post', $e->getMessage());
+        \App\Lib\Logger::op(['event' => 'failed.append', 'imageId' => $item['id'], 'file' => $item['file'], 'stage' => 'post']);
+        array_shift($q['items']);
+        Queue::save($q);
+    }
+    // tmp cleanup if created
+    if (isset($tweetPath)) { @unlink($tweetPath); }
+    if (isset($preview) && !empty($preview)) { @unlink($preview); }
+    // advance state
+    $stateFile = __DIR__ . '/../data/meta/state.json';
+    $state = Util::readJson($stateFile, ['lastPostAt' => 0, 'lastFixedSlotTs' => 0, 'scheduleHash' => '']);
+    $state['lastPostAt'] = time();
+    Util::writeJson($stateFile, $state);
     Util::jsonResponse(['error' => 'post_fail', 'message' => $e->getMessage()], 500);
 } finally {
     Lock::release('post.lock');

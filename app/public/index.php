@@ -139,9 +139,16 @@ if (isset($_GET['logout'])) {
         }
       ?>
 
+      <section id="failed-section" class="card p-5 mb-5 hidden">
+        <div class="flex items-center mb-3">
+          <h2 class="font-semibold tracking-tight">投稿失敗一覧（<span id="failed-count">0</span>枚）</h2>
+        </div>
+        <div id="grid-failed" class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-5"></div>
+      </section>
+
       <section class="card p-5">
         <div class="flex items-center mb-3">
-          <h2 class="font-semibold tracking-tight">投稿予約一覧（ドラッグで並べ替え）</h2>
+          <h2 class="font-semibold tracking-tight">投稿予約一覧（<span id="total-count">0</span>枚<span id="about-days" class="text-gray-500 text-sm ml-2 hidden">/ あと0日分</span>）</h2>
           <button id="btn-upload" class="ml-auto btn-base btn-primary px-3 py-2 text-sm">アップロード</button>
         </div>
         <p class="text-sm text-gray-500 my-3"><?php echo htmlspecialchars($nextPostText, ENT_QUOTES, 'UTF-8'); ?></p>
@@ -157,6 +164,18 @@ if (isset($_GET['logout'])) {
         </div>
       </template>
 
+      <template id="tpl-card-failed">
+        <div class="relative group img-card">
+          <div class="thumb">
+            <img />
+          </div>
+          <div class="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100">
+            <button class="bg-white/90 px-2 py-1 rounded text-xs btn-restore shadow">予約に戻す</button>
+            <button class="bg-white/90 px-2 py-1 rounded text-xs btn-delete shadow">削除</button>
+          </div>
+        </div>
+      </template>
+
       <script>
         const csrfCookie = '<?php echo addslashes(Settings::security('csrfCookieName')); ?>';
         const csrfToken = '<?php echo addslashes(Csrf::issue()); ?>';
@@ -167,7 +186,13 @@ if (isset($_GET['logout'])) {
               'X-CSRF-Token': csrfToken
             }
           });
-          return await res.json();
+          const txt = await res.text();
+          try {
+            return JSON.parse(txt);
+          } catch (e) {
+            console.error('Non-JSON response from', url, { status: res.status, body: txt });
+            throw new Error('Request failed');
+          }
         }
         async function apiPost(url, body) {
           const res = await fetch(url, {
@@ -192,6 +217,69 @@ if (isset($_GET['logout'])) {
 
         async function refreshList() {
           const data = await apiGet('/api/list.php');
+
+          // Failed section
+          const failedSection = document.getElementById('failed-section');
+          const failedCountEl = document.getElementById('failed-count');
+          const failedGrid = document.getElementById('grid-failed');
+          failedGrid.innerHTML = '';
+          if (Array.isArray(data.failed) && data.failed.length > 0) {
+            failedSection.classList.remove('hidden');
+            failedCountEl.textContent = String(data.failed.length);
+            data.failed.forEach(item => {
+              const tpl = document.getElementById('tpl-card-failed').content.cloneNode(true);
+              const img = tpl.querySelector('img');
+              const src = `/api/file.php?id=${encodeURIComponent(item.id)}`;
+              img.src = src;
+              img.alt = item.file;
+              const btnDel = tpl.querySelector('.btn-delete');
+              btnDel.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+                await apiPost('/api/delete.php', { id: item.id, scope: 'failed' });
+                refreshList();
+              });
+              const btnRestore = tpl.querySelector('.btn-restore');
+              btnRestore.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+                await apiPost('/api/restore.php', { id: item.id, position: 'head' });
+                showMsg('先頭に戻しました', 'success');
+                refreshList();
+              });
+              const a = document.createElement('a');
+              a.href = src;
+              if (item.width && item.height) {
+                a.setAttribute('data-pswp-width', item.width);
+                a.setAttribute('data-pswp-height', item.height);
+              }
+              a.appendChild(tpl);
+              const cell = document.createElement('div');
+              cell.dataset.id = item.id;
+              cell.appendChild(a);
+              failedGrid.appendChild(cell);
+            });
+          } else {
+            failedSection.classList.add('hidden');
+          }
+
+          // Queue section
+          const countEl = document.getElementById('total-count');
+          const aboutDaysEl = document.getElementById('about-days');
+          if (countEl) {
+            countEl.textContent = String(data.items.length);
+          }
+          if (aboutDaysEl) {
+            const days = data.aboutDays;
+            if (typeof days === 'number' && days > 0) {
+              aboutDaysEl.textContent = `/ あと${days}日分`;
+              aboutDaysEl.classList.remove('hidden');
+            } else {
+              aboutDaysEl.classList.add('hidden');
+            }
+          }
           const grid = document.getElementById('grid');
           const isMobile = window.matchMedia('(max-width: 640px)').matches;
           grid.innerHTML = '';
@@ -228,9 +316,7 @@ if (isset($_GET['logout'])) {
               e.preventDefault();
               e.stopPropagation();
               if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
-              await apiPost('/api/delete.php', {
-                id: item.id
-              });
+              await apiPost('/api/delete.php', { id: item.id });
               refreshList();
             });
             const a = document.createElement('a');
@@ -251,34 +337,39 @@ if (isset($_GET['logout'])) {
               animation: 150,
               onEnd: async () => {
                 const order = Array.from(grid.children).map(el => el.dataset.id);
-                await apiPost('/api/reorder.php', {
-                  order
-                });
+                await apiPost('/api/reorder.php', { order });
               }
             });
           }
 
-          // Initialize PhotoSwipe lightbox
+          // Initialize PhotoSwipe lightbox for both sections
           if (window._pswp) {
             window._pswp.destroy();
           }
-          const lightbox = new window.PhotoSwipeLightbox({
+          const lb1 = new window.PhotoSwipeLightbox({
             gallery: '#grid',
             children: 'a',
             pswpModule: () => Promise.resolve(window.PhotoSwipe),
           });
-          lightbox.init();
-          window._pswp = lightbox;
+          lb1.init();
+          const lb2 = new window.PhotoSwipeLightbox({
+            gallery: '#grid-failed',
+            children: 'a',
+            pswpModule: () => Promise.resolve(window.PhotoSwipe),
+          });
+          lb2.init();
+          window._pswp = { destroy() { lb1.destroy(); lb2.destroy(); } };
         }
 
 
-        function showMsg(text, type = 'error') {
+        function showMsg(text, type = 'error', onHide) {
           const el = document.getElementById('op-msg');
           el.textContent = text;
           el.className = 'mb-4 text-sm rounded border px-3 py-2 ' + (type === 'error' ? 'text-red-700 bg-red-50 border-red-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200');
           el.classList.remove('hidden');
           setTimeout(() => {
             el.classList.add('hidden');
+            if (typeof onHide === 'function') onHide();
           }, 3000);
         }
 
@@ -295,7 +386,9 @@ if (isset($_GET['logout'])) {
             showMsg('投稿しました', 'success');
             refreshList();
           } catch (e) {
-            showMsg(e.message || '投稿に失敗しました', 'error');
+            showMsg(e.message || '投稿に失敗しました', 'error', () => {
+              location.reload();
+            });
           } finally {
             postBtn.disabled = false;
             postBtn.classList.remove('opacity-60', 'cursor-not-allowed');

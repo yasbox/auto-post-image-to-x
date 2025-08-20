@@ -5,6 +5,7 @@ use App\Lib\ImageProc;
 use App\Lib\Lock;
 use App\Lib\Logger;
 use App\Lib\Queue;
+use App\Lib\Failed;
 use App\Lib\Settings;
 use App\Lib\TitleLLM;
 use App\Lib\Util;
@@ -92,16 +93,27 @@ try {
     $min = (int)($cfg['post']['hashtags']['min'] ?? 0);
     $max = (int)($cfg['post']['hashtags']['max'] ?? 0);
     $num = max($min, min($max, random_int($min, $max)));
-    if (!isset($cfg['post']['title']['enabled']) || $cfg['post']['title']['enabled']) {
-        $preview = ImageProc::makeLLMPreview($inboxPath, $cfg['imagePolicy'], $id);
-        $both = TitleLLM::generateAndPickTags($preview, $cfg['post']['title'], (int)$cfg['post']['textMax'], $cfg['post']['title']['ngWords'] ?? [], $tags, $num);
-        $title = trim((string)($both['title'] ?? ''));
-        $picked = is_array($both['tags'] ?? null) ? $both['tags'] : [];
-        $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', (string)$t), $picked);
-    } else {
-        shuffle($tags);
-        $picked = array_slice($tags, 0, $num);
-        $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', (string)$t), $picked);
+    try {
+        if (!isset($cfg['post']['title']['enabled']) || $cfg['post']['title']['enabled']) {
+            $preview = ImageProc::makeLLMPreview($inboxPath, $cfg['imagePolicy'], $id);
+            $both = TitleLLM::generateAndPickTags($preview, $cfg['post']['title'], (int)$cfg['post']['textMax'], $cfg['post']['title']['ngWords'] ?? [], $tags, $num);
+            $title = trim((string)($both['title'] ?? ''));
+            $picked = is_array($both['tags'] ?? null) ? $both['tags'] : [];
+            $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', (string)$t), $picked);
+        } else {
+            shuffle($tags);
+            $picked = array_slice($tags, 0, $num);
+            $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', (string)$t), $picked);
+        }
+    } catch (Throwable $e) {
+        Logger::post(['level' => 'error', 'event' => 'title.fail', 'imageId' => $id, 'file' => $item['file'], 'error' => $e->getMessage()]);
+        Failed::append($id, $item['file'], 'title', $e->getMessage());
+        array_shift($q['items']);
+        Queue::save($q);
+        if (!empty($preview)) { @unlink($preview); }
+        $state['lastPostAt'] = $nowTs;
+        Util::writeJson($stateFile, $state);
+        exit(0);
     }
     $hashtagsStr = trim(implode(' ', $hashtags));
     $titleStr = trim((string)($title ?? ''));
@@ -118,6 +130,14 @@ try {
     try { $tweetPath = ImageProc::makeTweetImage($inboxPath, $cfg['imagePolicy'], $id); }
     catch (Throwable $e) {
         Logger::post(['level' => 'error', 'event' => 'optimize.fail', 'imageId' => $id, 'file' => $item['file'], 'error' => $e->getMessage()]);
+        // move to failed and remove from queue, keep original image
+        Failed::append($id, $item['file'], 'optimize', $e->getMessage());
+        Logger::op(['event' => 'failed.append', 'imageId' => $id, 'file' => $item['file'], 'stage' => 'optimize']);
+        array_shift($q['items']);
+        Queue::save($q);
+        // advance schedule state
+        $state['lastPostAt'] = $nowTs;
+        Util::writeJson($stateFile, $state);
         exit(0);
     }
 
@@ -135,6 +155,14 @@ try {
         Logger::post(['level' => 'info', 'event' => 'posted', 'imageId' => $id, 'file' => $item['file'], 'tweet' => $res]);
     } catch (Throwable $e) {
         Logger::post(['level' => 'error', 'event' => 'post.fail', 'imageId' => $id, 'file' => $item['file'], 'error' => $e->getMessage()]);
+        // failed: move to failed list, remove from queue, keep original
+        Failed::append($id, $item['file'], 'post', $e->getMessage());
+        Logger::op(['event' => 'failed.append', 'imageId' => $id, 'file' => $item['file'], 'stage' => 'post']);
+        array_shift($q['items']);
+        Queue::save($q);
+        if (!empty($tweetPath)) { @unlink($tweetPath); }
+        if (!empty($preview)) { @unlink($preview); }
+        $state['lastPostAt'] = $nowTs;
     }
 
     Util::writeJson($stateFile, $state);
