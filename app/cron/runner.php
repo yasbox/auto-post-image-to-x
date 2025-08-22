@@ -26,10 +26,10 @@ $cfg = Settings::get();
 $now = Util::now($cfg['timezone']);
 $nowTs = $now->getTimestamp();
 
-if (!Lock::acquire('post.lock')) { exit(0); }
+if (!Lock::acquire('post.lock')) { Logger::op(['event' => 'runner.skip.lock', 'nowTs' => $nowTs]); exit(0); }
 
 try {
-    if (isset($cfg['schedule']['enabled']) && !$cfg['schedule']['enabled']) { exit(0); }
+    if (isset($cfg['schedule']['enabled']) && !$cfg['schedule']['enabled']) { Logger::op(['event' => 'runner.skip.disabled']); exit(0); }
     $due = false;
     $mode = $cfg['schedule']['mode'] ?? 'both';
 
@@ -75,12 +75,24 @@ try {
         }
     }
 
-    if (!$due) { exit(0); }
+    if (!$due) {
+        Logger::op([
+            'event' => 'runner.skip.due',
+            'mode' => $mode,
+            'nowTs' => $nowTs,
+            'lastPostAt' => (int)($state['lastPostAt'] ?? 0),
+            'lastFixedSlotTs' => (int)($state['lastFixedSlotTs'] ?? 0),
+            'intervalMinutes' => (int)($cfg['schedule']['intervalMinutes'] ?? 0),
+            'fixedTimesCount' => is_array($cfg['schedule']['fixedTimes'] ?? null) ? count($cfg['schedule']['fixedTimes']) : 0,
+            'timezone' => (string)($cfg['timezone'] ?? ''),
+        ]);
+        exit(0);
+    }
 
     // Load queue head
     $q = Queue::get();
     $item = $q['items'][0] ?? null;
-    if (!$item) { exit(0); }
+    if (!$item) { Logger::op(['event' => 'runner.skip.empty', 'queueCount' => count($q['items'] ?? [])]); exit(0); }
     $id = $item['id'];
     $inboxPath = __DIR__ . '/../data/inbox/' . $item['file'];
 
