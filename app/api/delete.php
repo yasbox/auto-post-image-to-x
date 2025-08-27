@@ -27,6 +27,8 @@ if ($scope === 'failed') {
     if ($found) {
         $inbox = __DIR__ . '/../data/inbox/' . $found['file'];
         if (is_file($inbox)) @unlink($inbox);
+        $thumb = __DIR__ . '/../data/thumbs/' . $id . '.jpg';
+        if (is_file($thumb)) @unlink($thumb);
         array_splice($f['items'], $idx, 1);
         Failed::save($f);
         Logger::op(['event' => 'delete', 'scope' => 'failed', 'imageId' => $id, 'file' => $found['file']]);
@@ -38,6 +40,8 @@ if ($scope === 'failed') {
     if ($found) {
         $inbox = __DIR__ . '/../data/inbox/' . $found['file'];
         if (is_file($inbox)) @unlink($inbox);
+        $thumb = __DIR__ . '/../data/thumbs/' . $id . '.jpg';
+        if (is_file($thumb)) @unlink($thumb);
         array_splice($q['items'], $idx, 1);
         Queue::save($q);
         Logger::op(['event' => 'delete', 'scope' => 'queue', 'imageId' => $id, 'file' => $found['file']]);

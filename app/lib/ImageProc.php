@@ -5,6 +5,28 @@ namespace App\Lib;
 
 final class ImageProc
 {
+    public static function makeThumb(string $srcPath, array $p, string $outPath): string
+    {
+        $prevMem = null;
+        try {
+            $prevMem = self::bumpMemoryForLargeImage($srcPath, (int)($p['memoryLimitMB'] ?? 512));
+        } catch (\Throwable $e) {
+            // ignore inability to adjust memory
+        }
+        [$img, $w, $h] = self::loadBitmap($srcPath);
+        $max = (int)($p['longEdge'] ?? 512);
+        $quality = (int)($p['quality'] ?? 70);
+        $strip = (bool)($p['stripMetadata'] ?? true);
+        [$img, $w, $h] = self::resizeMaxLongEdge($img, $w, $h, $max);
+        $jpeg = self::encodeJPEG($img, $quality, $strip);
+        $dir = dirname($outPath);
+        if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
+        file_put_contents($outPath, $jpeg);
+        imagedestroy($img);
+        if ($prevMem !== null) { @ini_set('memory_limit', $prevMem); }
+        return $outPath;
+    }
+
     public static function makeLLMPreview(string $srcPath, array $p, string $id): string
     {
         [$img, $w, $h] = self::loadBitmap($srcPath);
@@ -66,7 +88,7 @@ final class ImageProc
         $info = getimagesize($path);
         if (!$info) throw new \InvalidArgumentException('Invalid image');
         $mime = $info['mime'];
-        if ($mime === 'image/jpeg') { $img = imagecreatefromjpeg($path); }
+        if ($mime === 'image/jpeg') { @ini_set('gd.jpeg_ignore_warning', '1'); $img = imagecreatefromjpeg($path); }
         elseif ($mime === 'image/png') { $img = imagecreatefrompng($path); imagepalettetotruecolor($img); imagesavealpha($img, false); }
         elseif ($mime === 'image/webp') { $img = imagecreatefromwebp($path); }
         else throw new \InvalidArgumentException('Unsupported mime');
@@ -99,6 +121,36 @@ final class ImageProc
         imagejpeg($img, null, $quality);
         $buf = ob_get_clean();
         return $buf === false ? '' : $buf;
+    }
+
+    private static function bumpMemoryForLargeImage(string $path, int $limitMb): ?string
+    {
+        if ($limitMb <= 0) return null;
+        $info = @getimagesize($path);
+        if (!$info) return null;
+        $w = (int)($info[0] ?? 0);
+        $h = (int)($info[1] ?? 0);
+        if ($w <= 0 || $h <= 0) return null;
+        $estimate = (int)($w * $h * 5); // approx RGBA + overhead
+        $current = self::toBytes(@ini_get('memory_limit'));
+        // If current limit seems enough (with 64MB headroom), skip
+        if ($current > 0 && $estimate + (64 * 1024 * 1024) < $current) return null;
+        $prev = @ini_get('memory_limit');
+        @ini_set('memory_limit', (string)$limitMb . 'M');
+        return is_string($prev) ? $prev : null;
+    }
+
+    private static function toBytes($val): int
+    {
+        if ($val === false || $val === null || $val === '') return 0;
+        if ($val === '-1') return 1 << 30; // treat unlimited as large
+        $str = trim((string)$val);
+        $unit = strtolower(substr($str, -1));
+        $num = (float)$str;
+        if ($unit === 'g') return (int)($num * 1024 * 1024 * 1024);
+        if ($unit === 'm') return (int)($num * 1024 * 1024);
+        if ($unit === 'k') return (int)($num * 1024);
+        return (int)$num;
     }
 }
 

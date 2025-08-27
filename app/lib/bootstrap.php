@@ -15,6 +15,7 @@ spl_autoload_register(function($class){
 $base = realpath(__DIR__ . '/..');
 foreach ([
     $base . '/data/inbox',
+    $base . '/data/thumbs',
     $base . '/data/tmp/llm',
     $base . '/data/tmp/tweet',
     $base . '/data/meta',

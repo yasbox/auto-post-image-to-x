@@ -7,6 +7,7 @@ app/config/.env
 app/logs/*
 app/data/tmp/*
 app/data/inbox/*
+app/data/thumbs/*
 app/data/meta/queue.json
 app/data/meta/state.json
 app/data/meta/*.lock

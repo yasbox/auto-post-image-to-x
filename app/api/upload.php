@@ -5,6 +5,7 @@ use App\Lib\Auth;
 use App\Lib\Csrf;
 use App\Lib\Logger;
 use App\Lib\Queue;
+use App\Lib\ImageProc;
 use App\Lib\Settings;
 use App\Lib\Util;
 
@@ -41,6 +42,17 @@ if ($dzuuid === '') {
     $target = $inboxDir . '/' . $targetName;
     if (!@rename($_FILES['file']['tmp_name'], $target)) move_uploaded_file($_FILES['file']['tmp_name'], $target);
     Queue::append($id, $targetName);
+    // Create thumbnail (best-effort)
+    try {
+        $thumbCfg = Settings::get()['thumb'] ?? ['enabled' => true, 'longEdge' => 512, 'quality' => 70, 'stripMetadata' => true];
+        $gdAvailable = function_exists('imagecreatetruecolor') && function_exists('imagejpeg') && function_exists('imagecopyresampled');
+        if ((!isset($thumbCfg['enabled']) || (bool)$thumbCfg['enabled']) && $gdAvailable) {
+            $thumbPath = __DIR__ . '/../data/thumbs/' . $id . '.jpg';
+            ImageProc::makeThumb($target, $thumbCfg, $thumbPath);
+        }
+    } catch (Throwable $e) {
+        Logger::op(['event' => 'thumb.error', 'imageId' => $id, 'message' => $e->getMessage()]);
+    }
     Logger::op(['event' => 'upload.single', 'imageId' => $id, 'file' => $targetName, 'bytes' => filesize($target)]);
     Util::jsonResponse(['status' => 'ok', 'id' => $id]);
 }
@@ -106,6 +118,18 @@ if (!@rename($finalTmp, $target)) {
 }
 
 Queue::append($id, $targetName);
+// Generate thumbnail (best-effort)
+try {
+    $thumbCfg = Settings::get()['thumb'] ?? ['enabled' => true, 'longEdge' => 512, 'quality' => 70, 'stripMetadata' => true];
+    $gdAvailable = function_exists('imagecreatetruecolor') && function_exists('imagejpeg') && function_exists('imagecopyresampled');
+    if ((!isset($thumbCfg['enabled']) || (bool)$thumbCfg['enabled']) && $gdAvailable) {
+        $thumbPath = __DIR__ . '/../data/thumbs/' . $id . '.jpg';
+        ImageProc::makeThumb($target, $thumbCfg, $thumbPath);
+    }
+} catch (Throwable $e) {
+    Logger::op(['event' => 'thumb.error', 'imageId' => $id, 'message' => $e->getMessage()]);
+}
+
 Logger::op(['event' => 'upload.combined', 'imageId' => $id, 'file' => $targetName, 'bytes' => filesize($target), 'mime' => $mime]);
 
 array_map('unlink', glob($tmpdir.'/*.part') ?: []);

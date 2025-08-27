@@ -76,6 +76,13 @@ final class Settings
                 'llmPreviewQuality' => 70,
                 'stripMetadataOnLLM' => true,
             ],
+            'thumb' => [
+                'enabled' => true,
+                'longEdge' => 512,
+                'quality' => 70,
+                'stripMetadata' => true,
+                'memoryLimitMB' => 512,
+            ],
             'xapi' => [
                 'useAltText' => false,
                 'duplicateCheck' => false,

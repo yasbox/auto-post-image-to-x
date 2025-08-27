@@ -23,6 +23,7 @@ foreach ($q['items'] as $it) {
         $it['size'] = filesize($path);
         $dim = @getimagesize($path);
         if ($dim) { $it['width'] = $dim[0]; $it['height'] = $dim[1]; }
+        // Prefer serving thumb url from client by adding thumb=1
         $items[] = $it;
     } else {
         $pruned = true; // dangling entry (file missing)

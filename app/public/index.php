@@ -70,6 +70,15 @@ if (isset($_GET['logout'])) {
       <?php endif; ?>
     </div>
     <div id="op-msg" class="mb-4 hidden"></div>
+    <div id="upload-modal" class="fixed inset-0 hidden flex items-center justify-center bg-black/50 z-50">
+      <div class="bg-white rounded shadow p-6 w-full max-w-md">
+        <div class="font-semibold mb-3">アップロード中…</div>
+        <div class="w-full bg-gray-200 rounded h-2 overflow-hidden">
+          <div id="upload-progress-bar" class="bg-blue-500 h-2" style="width:0%"></div>
+        </div>
+        <div class="text-xs text-gray-600 mt-2"><span id="upload-progress-text">0%</span></div>
+      </div>
+    </div>
 
     <?php if (!$isLoggedIn): ?>
       <div class="bg-white p-6 rounded shadow max-w-sm mx-auto mt-16">
@@ -229,9 +238,11 @@ if (isset($_GET['logout'])) {
             data.failed.forEach(item => {
               const tpl = document.getElementById('tpl-card-failed').content.cloneNode(true);
               const img = tpl.querySelector('img');
-              const src = `/api/file.php?id=${encodeURIComponent(item.id)}`;
-              img.src = src;
+              const full = `/api/file.php?id=${encodeURIComponent(item.id)}`;
+              const thumbUrl = `${full}&thumb=1`;
+              img.src = thumbUrl;
               img.alt = item.file;
+              img.onerror = () => { img.src = full; };
               const btnDel = tpl.querySelector('.btn-delete');
               btnDel.addEventListener('click', async (e) => {
                 e.preventDefault();
@@ -250,7 +261,7 @@ if (isset($_GET['logout'])) {
                 refreshList();
               });
               const a = document.createElement('a');
-              a.href = src;
+              a.href = full;
               if (item.width && item.height) {
                 a.setAttribute('data-pswp-width', item.width);
                 a.setAttribute('data-pswp-height', item.height);
@@ -308,8 +319,10 @@ if (isset($_GET['logout'])) {
           data.items.forEach(item => {
             const tpl = document.getElementById('tpl-card').content.cloneNode(true);
             const img = tpl.querySelector('img');
-            const src = `/api/file.php?id=${encodeURIComponent(item.id)}`;
-            img.src = src;
+            const full = `/api/file.php?id=${encodeURIComponent(item.id)}`;
+            const thumbUrl = `${full}&thumb=1`;
+            img.src = thumbUrl;
+            img.onerror = () => { img.src = full; };
             img.alt = item.file;
             const btn = tpl.querySelector('.btn-delete');
             btn.addEventListener('click', async (e) => {
@@ -320,7 +333,7 @@ if (isset($_GET['logout'])) {
               refreshList();
             });
             const a = document.createElement('a');
-            a.href = src;
+            a.href = full;
             if (item.width && item.height) {
               a.setAttribute('data-pswp-width', item.width);
               a.setAttribute('data-pswp-height', item.height);
@@ -416,7 +429,78 @@ if (isset($_GET['logout'])) {
           clickable: ['#btn-upload'],
           previewsContainer: '#dz-hidden'
         });
-        dz.on('queuecomplete', refreshList);
+        // Batch-level progress (monotonic): track added files in this batch
+        let batchTotalBytes = 0;
+        let batchUploadedBytes = 0;
+        let batchActive = false;
+
+        function showUploadModal() {
+          const modal = document.getElementById('upload-modal');
+          if (modal) modal.classList.remove('hidden');
+        }
+        function hideUploadModal() {
+          const modal = document.getElementById('upload-modal');
+          if (modal) modal.classList.add('hidden');
+        }
+        function setProgress(pct) {
+          const bar = document.getElementById('upload-progress-bar');
+          const txt = document.getElementById('upload-progress-text');
+          if (bar && txt) {
+            const v = Math.max(0, Math.min(100, pct));
+            bar.style.width = v + '%';
+            txt.textContent = Math.round(v) + '%';
+          }
+        }
+
+        function resetBatch() {
+          batchTotalBytes = 0;
+          batchUploadedBytes = 0;
+          batchActive = false;
+          setProgress(0);
+        }
+
+        // Start a new batch on first file added after idle
+        dz.on('addedfile', (file) => {
+          if (!batchActive) {
+            resetBatch();
+            batchActive = true;
+            showUploadModal();
+          }
+          // If size is unknown, Dropzone sets 0; still okay for monotonic display
+          batchTotalBytes += (typeof file.size === 'number' ? file.size : 0);
+        });
+
+        // Update uploaded bytes based on per-file progress
+        dz.on('uploadprogress', (file, progress, bytesSent) => {
+          // Recompute sum of uploaded bytes across all files in current batch to keep monotonic
+          const files = dz.getAcceptedFiles().concat(dz.getUploadingFiles());
+          let uploaded = 0;
+          let total = 0;
+          files.forEach(f => {
+            const t = (typeof f.size === 'number' ? f.size : 0);
+            total += t;
+            const p = (typeof f.upload?.progress === 'number' ? f.upload.progress : (f.status === Dropzone.SUCCESS ? 100 : 0));
+            uploaded += t * (p / 100);
+          });
+          // Fallback to tracked totals if recompute yields 0/NaN
+          if (total <= 0 && batchTotalBytes > 0) {
+            total = batchTotalBytes;
+            uploaded = Math.max(batchUploadedBytes, uploaded);
+          }
+          batchTotalBytes = Math.max(batchTotalBytes, total);
+          batchUploadedBytes = Math.max(batchUploadedBytes, uploaded);
+          const pct = total > 0 ? (uploaded / total) * 100 : 0;
+          setProgress(pct);
+        });
+
+        dz.on('queuecomplete', () => {
+          setProgress(100);
+          setTimeout(() => {
+            hideUploadModal();
+            resetBatch();
+          }, 500);
+          refreshList();
+        });
 
         // Allow dropping files on the grid area and show highlight during drag
         const gridEl = document.getElementById('grid');
