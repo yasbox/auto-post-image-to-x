@@ -11,6 +11,7 @@ app/data/thumbs/*
 app/data/meta/queue.json
 app/data/meta/state.json
 app/data/meta/*.lock
+app/data/meta/failed.json
 app/public/assets/*.map
 # Ensure vendored frontend assets are tracked
 !app/public/assets/vendor/
