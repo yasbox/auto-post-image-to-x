@@ -82,10 +82,20 @@ $cfg = Settings::get();
     <section class="card p-5">
       <h2 class="font-semibold mb-3 tracking-tight">投稿テキスト</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <label class="block md:col-span-2">LLMプロバイダ
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <select id="llm_provider" class="border rounded p-2 w-full">
+              <option value="openai">OpenAI</option>
+              <option value="gemini">Google Gemini</option>
+            </select>
+            <input type="text" id="llm_model" class="border rounded p-2 w-full md:col-span-2" placeholder="モデル（例: gpt-4o-mini / gemini-1.5-flash）" />
+          </div>
+          <p class="text-xs text-gray-500 mt-1">OpenAIは `OPENAI_API_KEY`、Geminiは `GOOGLE_API_KEY`（または `GEMINI_API_KEY`）を `app/config/.env` に設定してください。</p>
+        </label>
         <label class="block md:col-span-2">
           <span class="inline-flex items-center gap-2">
             <input type="checkbox" id="title_enabled" class="h-4 w-4" />
-            <span>OpenAIでタイトル生成を有効化</span>
+            <span>タイトル生成を有効化</span>
           </span>
         </label>
         <label class="block">タイトル最大文字数
@@ -166,6 +176,8 @@ $cfg = Settings::get();
       document.getElementById('chunkSize').value = cfg.upload.chunkSize;
       document.getElementById('concurrency').value = cfg.upload.concurrency;
       document.getElementById('allowedMime').value = (cfg.upload.allowedMime || []).join(', ');
+      document.getElementById('llm_provider').value = (cfg.post.llm && cfg.post.llm.provider) ? cfg.post.llm.provider : 'openai';
+      document.getElementById('llm_model').value = (cfg.post.llm && cfg.post.llm.model) ? cfg.post.llm.model : (document.getElementById('llm_provider').value === 'gemini' ? 'gemini-1.5-flash' : 'gpt-4o-mini');
       document.getElementById('title_max').value = cfg.post.title.maxChars;
       document.getElementById('title_tone').value = cfg.post.title.tone;
       document.getElementById('title_ng').value = (cfg.post.title.ngWords || []).join(', ');
@@ -201,6 +213,11 @@ $cfg = Settings::get();
         },
         post: {
           ...cur.post,
+          llm: {
+            ...cur.post.llm,
+            provider: document.getElementById('llm_provider').value,
+            model: document.getElementById('llm_model').value
+          },
           title: {
             ...cur.post.title,
             enabled: document.getElementById('title_enabled').checked,
