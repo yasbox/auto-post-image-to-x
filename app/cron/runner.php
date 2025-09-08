@@ -40,6 +40,8 @@ try {
         $scheduleHashNow = hash('sha256', json_encode([
             'tz' => $cfg['timezone'] ?? 'UTC',
             'times' => $fixedTimes,
+            // include mode in hash so switching from interval<->fixed advances baseline to now
+            'mode' => $mode,
         ]));
 
         // If schedule changed (times or timezone), advance baseline to now to avoid catch-up posts
