@@ -75,7 +75,7 @@ $cfg = Settings::get();
         <div id="mode_card_per_day" class="p-4 border rounded bg-white cursor-pointer select-none hover:border-blue-300 focus:outline-none md:col-span-2" role="button" tabindex="0">
           <label class="inline-flex items-center gap-2">
             <input type="radio" name="schedule_mode" value="per_day" id="schedule_mode_per_day" class="h-4 w-4" />
-            <span class="font-medium">1日あたりの投稿数（ランダム）</span>
+            <span class="font-medium">1日あたりの投稿数</span>
           </label>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-3">
             <label class="block text-sm text-gray-700">投稿数（回/日）
@@ -370,6 +370,15 @@ $cfg = Settings::get();
       const onSave = async () => {
         const updated = collectFromForm(cur);
         await apiPost('/api/settings_set.php', updated);
+        // Auto-reschedule when per_day mode and schedule enabled
+        try {
+          const perDay = updated?.schedule?.mode === 'per_day';
+          const enabled = updated?.schedule?.enabled !== false;
+          if (perDay && enabled) {
+            await apiPost('/api/reschedule.php', {});
+            await refreshPerDaySchedule();
+          }
+        } catch (e) { /* ignore auto-reschedule failure */ }
         const msg = document.getElementById('msg'); if (msg){ msg.textContent = '保存しました'; msg.classList.remove('hidden'); setTimeout(()=>{ msg.textContent=''; msg.classList.add('hidden'); }, 1500); }
       };
       const btnTop = document.getElementById('btn-save-top');

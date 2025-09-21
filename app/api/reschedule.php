@@ -40,6 +40,14 @@ $count = (int)($cfg['schedule']['perDayCount'] ?? 0);
 $count = max(1, min(24, $count));
 $minSpacingSec = max(0, (int)($cfg['schedule']['minSpacingMinutes'] ?? 0) * 60);
 
+// Compute schedule hash same as runner to prevent unintended regen
+$scheduleHashNow = hash('sha256', json_encode([
+    'tz' => $cfg['timezone'] ?? 'UTC',
+    'mode' => $mode,
+    'count' => $count,
+    'minSpacingSec' => $minSpacingSec,
+]));
+
 // random-phase bins
 $step = intdiv($dayLen, $count);
 $margin = max(0, intdiv($step, 10));
@@ -65,6 +73,8 @@ for ($i = 0; $i < count($slots); $i++) {
 $state['dailyPlanDate'] = $date;
 $state['dailyPlanSlots'] = $slots;
 $state['lastDailySlotTs'] = 0;
+// Align with runner's change detection to avoid immediate regen
+$state['scheduleHash'] = $scheduleHashNow;
 Util::writeJson($stateFile, $state);
 
 Util::jsonResponse(['status' => 'ok', 'date' => $date, 'slots' => $slots]);
