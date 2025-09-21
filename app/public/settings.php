@@ -369,16 +369,30 @@ $cfg = Settings::get();
       });
       const onSave = async () => {
         const updated = collectFromForm(cur);
+        // Detect changes relevant to per_day reschedule
+        const prev = cur || {};
+        const prevMode = (prev.schedule && prev.schedule.mode) ? prev.schedule.mode : 'fixed';
+        const newMode = (updated.schedule && updated.schedule.mode) ? updated.schedule.mode : 'fixed';
+        const prevCount = (prev.schedule && typeof prev.schedule.perDayCount === 'number') ? prev.schedule.perDayCount : 0;
+        const newCount = (updated.schedule && typeof updated.schedule.perDayCount === 'number') ? updated.schedule.perDayCount : 0;
+        const prevSpacing = (prev.schedule && typeof prev.schedule.minSpacingMinutes === 'number') ? prev.schedule.minSpacingMinutes : 0;
+        const newSpacing = (updated.schedule && typeof updated.schedule.minSpacingMinutes === 'number') ? updated.schedule.minSpacingMinutes : 0;
+        const switchedToPerDay = (prevMode !== 'per_day' && newMode === 'per_day');
+        const changedCount = (newCount !== prevCount);
+        const changedSpacing = (newSpacing !== prevSpacing);
+        const enabled = !(updated.schedule && updated.schedule.enabled === false);
+        const shouldAutoReschedule = enabled && newMode === 'per_day' && (switchedToPerDay || changedCount || changedSpacing);
+
         await apiPost('/api/settings_set.php', updated);
-        // Auto-reschedule when per_day mode and schedule enabled
+        // Auto-reschedule only when relevant fields changed
         try {
-          const perDay = updated?.schedule?.mode === 'per_day';
-          const enabled = updated?.schedule?.enabled !== false;
-          if (perDay && enabled) {
+          if (shouldAutoReschedule) {
             await apiPost('/api/reschedule.php', {});
             await refreshPerDaySchedule();
           }
         } catch (e) { /* ignore auto-reschedule failure */ }
+        // Update local baseline to avoid repeated triggers on next save
+        Object.assign(cur, updated);
         const msg = document.getElementById('msg'); if (msg){ msg.textContent = '保存しました'; msg.classList.remove('hidden'); setTimeout(()=>{ msg.textContent=''; msg.classList.add('hidden'); }, 1500); }
       };
       const btnTop = document.getElementById('btn-save-top');
