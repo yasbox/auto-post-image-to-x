@@ -101,13 +101,14 @@ if (isset($_GET['logout'])) {
         $now = Util::now($tz);
         $nowTs = $now->getTimestamp();
         $stateFile = __DIR__ . '/../data/meta/state.json';
-        $state = Util::readJson($stateFile, ['lastPostAt' => 0, 'lastFixedSlotTs' => 0, 'scheduleHash' => '']);
-        $mode = (string)($cfg['schedule']['mode'] ?? 'both');
+        $state = Util::readJson($stateFile, ['lastPostAt' => 0, 'lastFixedSlotTs' => 0, 'scheduleHash' => '', 'dailyPlanDate' => '', 'dailyPlanSlots' => []]);
+        $mode = (string)($cfg['schedule']['mode'] ?? 'fixed');
+        if ($mode === 'both') { $mode = 'fixed'; }
         $enabled = !isset($cfg['schedule']['enabled']) || (bool)$cfg['schedule']['enabled'];
         $candidates = [];
         if ($enabled) {
           // Fixed-time schedule: pick the nearest upcoming slot (today or tomorrow)
-          if ($mode === 'fixed' || $mode === 'both') {
+          if ($mode === 'fixed') {
             $fixedTimes = $cfg['schedule']['fixedTimes'] ?? [];
             $date = $now->format('Y-m-d');
             $tzObj = new \DateTimeZone($tz);
@@ -125,8 +126,32 @@ if (isset($_GET['logout'])) {
             }
             if (!empty($slots)) { $candidates[] = $slots[0]; }
           }
+          // Per-day schedule: show next unconsumed slot today; if none in state, make ephemeral plan
+          if ($mode === 'per_day') {
+            $date = $now->format('Y-m-d');
+            $tzObj = new \DateTimeZone($tz);
+            $todayStart = (new \DateTimeImmutable($date . ' 00:00:00', $tzObj))->getTimestamp();
+            $tomorrowStart = (new \DateTimeImmutable($date . ' 00:00:00', $tzObj))->modify('+1 day')->getTimestamp();
+            $slots = [];
+            if (($state['dailyPlanDate'] ?? '') === $date && is_array($state['dailyPlanSlots'] ?? null)) {
+              $slots = $state['dailyPlanSlots'];
+            } else {
+              $count = max(1, min(24, (int)($cfg['schedule']['perDayCount'] ?? 3)));
+              $step = intdiv(max(1, $tomorrowStart - $todayStart), $count);
+              $margin = max(0, intdiv($step, 10));
+              for ($i=0; $i<$count; $i++) {
+                $binStart = $todayStart + $i*$step;
+                $lo = $binStart + $margin;
+                $hi = min($tomorrowStart - 1, $binStart + $step - $margin);
+                if ($hi <= $lo) { $lo = $binStart; $hi = min($tomorrowStart - 1, $binStart + $step - 1); }
+                $slots[] = random_int($lo, $hi);
+              }
+              sort($slots);
+            }
+            foreach ($slots as $ts) { if ($ts >= $nowTs) { $candidates[] = $ts; break; } }
+          }
           // Interval schedule: next time is lastPostAt + interval (or now if already due)
-          if ($mode === 'interval' || $mode === 'both') {
+          if ($mode === 'interval') {
             $interval = (int)($cfg['schedule']['intervalMinutes'] ?? 0) * 60;
             if ($interval > 0) {
               $lastPostAt = (int)($state['lastPostAt'] ?? 0);

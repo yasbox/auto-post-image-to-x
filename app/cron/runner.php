@@ -20,7 +20,11 @@ $state = Util::readJson($stateFile, [
     // Timestamp (epoch seconds) of the last executed fixed-time slot
     'lastFixedSlotTs' => 0,
     // Hash of schedule relevant fields to detect changes and avoid catch-up
-    'scheduleHash' => ''
+    'scheduleHash' => '',
+    // Per-day mode plan
+    'dailyPlanDate' => '',
+    'dailyPlanSlots' => [],
+    'lastDailySlotTs' => 0,
 ]);
 $cfg = Settings::get();
 $now = Util::now($cfg['timezone']);
@@ -31,11 +35,12 @@ if (!Lock::acquire('post.lock')) { Logger::op(['event' => 'runner.skip.lock', 'n
 try {
     if (isset($cfg['schedule']['enabled']) && !$cfg['schedule']['enabled']) { Logger::op(['event' => 'runner.skip.disabled']); exit(0); }
     $due = false;
-    $mode = $cfg['schedule']['mode'] ?? 'both';
+    $mode = $cfg['schedule']['mode'] ?? 'fixed';
+    if ($mode === 'both') { $mode = 'fixed'; }
 
     // Fixed times (timestamp-based, with schedule change detection)
     $date = $now->format('Y-m-d');
-    if ($mode === 'fixed' || $mode === 'both') {
+    if ($mode === 'fixed') {
         $fixedTimes = $cfg['schedule']['fixedTimes'] ?? [];
         $scheduleHashNow = hash('sha256', json_encode([
             'tz' => $cfg['timezone'] ?? 'UTC',
@@ -69,8 +74,84 @@ try {
         }
     }
 
+    // Per-day count (random phase + min spacing, daily plan)
+    if (!$due && $mode === 'per_day') {
+        $count = (int)($cfg['schedule']['perDayCount'] ?? 0);
+        $count = max(1, min(24, $count));
+        $minSpacingSec = max(0, (int)($cfg['schedule']['minSpacingMinutes'] ?? 0) * 60);
+
+        // Detect changes (tz/mode/count/minSpacing)
+        $scheduleHashNow = hash('sha256', json_encode([
+            'tz' => $cfg['timezone'] ?? 'UTC',
+            'mode' => $mode,
+            'count' => $count,
+            'minSpacingSec' => $minSpacingSec,
+        ]));
+
+        // Day boundaries in TZ (DST-aware)
+        $tz = new DateTimeZone($cfg['timezone'] ?? 'UTC');
+        $todayStart = (new DateTimeImmutable($date . ' 00:00:00', $tz))->getTimestamp();
+        $tomorrowStart = (new DateTimeImmutable($date . ' 00:00:00', $tz))->modify('+1 day')->getTimestamp();
+        $dayLen = max(1, $tomorrowStart - $todayStart); // 23/24/25h day
+
+        $needRegen = false;
+        if (($state['scheduleHash'] ?? '') !== $scheduleHashNow) { $needRegen = true; }
+        if (($state['dailyPlanDate'] ?? '') !== $date) { $needRegen = true; }
+        if (!is_array($state['dailyPlanSlots'] ?? null)) { $needRegen = true; }
+
+        if ($needRegen) {
+            // Generate plan with random phase and spacing
+            $step = intdiv($dayLen, $count);
+            $margin = max(0, intdiv($step, 10)); // 10% margin to avoid edges
+            $effectiveMin = min($minSpacingSec, max(0, $step - $margin));
+            $slots = [];
+            for ($i = 0; $i < $count; $i++) {
+                $binStart = $todayStart + $i * $step;
+                $lo = $binStart + $margin;
+                $hi = min($tomorrowStart - 1, $binStart + $step - $margin);
+                if ($hi <= $lo) { $lo = $binStart; $hi = min($tomorrowStart - 1, $binStart + $step - 1); }
+                $slots[] = random_int($lo, $hi);
+            }
+            sort($slots);
+            // Greedy adjust to enforce effectiveMin
+            for ($i = 1; $i < count($slots); $i++) {
+                if ($slots[$i] - $slots[$i-1] < $effectiveMin) {
+                    $slots[$i] = $slots[$i-1] + $effectiveMin;
+                }
+            }
+            // Clamp within the day
+            for ($i = 0; $i < count($slots); $i++) {
+                if ($slots[$i] >= $tomorrowStart) {
+                    $slots[$i] = $tomorrowStart - 1;
+                }
+            }
+
+            $state['dailyPlanDate'] = $date;
+            $state['dailyPlanSlots'] = $slots;
+            $state['lastDailySlotTs'] = 0; // reset consumption for the day
+            $state['scheduleHash'] = $scheduleHashNow;
+            Util::writeJson($stateFile, $state);
+            Logger::op(['event' => 'daily_plan_regen', 'count' => $count, 'minSpacingSec' => $minSpacingSec, 'effectiveMinSec' => $effectiveMin, 'slots' => $slots]);
+        }
+
+        $slots = is_array($state['dailyPlanSlots'] ?? null) ? $state['dailyPlanSlots'] : [];
+        sort($slots);
+        $lastDaily = (int)($state['lastDailySlotTs'] ?? 0);
+        foreach ($slots as $slotTs) {
+            if ($slotTs > $lastDaily && $slotTs <= $nowTs) {
+                // Enforce min spacing vs lastPostAt; if too soon, skip (do not consume)
+                if ($minSpacingSec > 0 && ($nowTs - (int)$state['lastPostAt']) < $minSpacingSec) {
+                    break; // not due yet due to spacing
+                }
+                $due = true;
+                $state['lastDailySlotTs'] = $slotTs;
+                break;
+            }
+        }
+    }
+
     // Interval
-    if (!$due && ($mode === 'interval' || $mode === 'both')) {
+    if (!$due && $mode === 'interval') {
         $interval = (int)($cfg['schedule']['intervalMinutes'] ?? 0) * 60;
         if ($interval > 0 && ($nowTs - (int)$state['lastPostAt']) >= $interval) {
             $due = true;
@@ -85,6 +166,8 @@ try {
             'lastPostAt' => (int)($state['lastPostAt'] ?? 0),
             'lastFixedSlotTs' => (int)($state['lastFixedSlotTs'] ?? 0),
             'intervalMinutes' => (int)($cfg['schedule']['intervalMinutes'] ?? 0),
+            'perDayCount' => (int)($cfg['schedule']['perDayCount'] ?? 0),
+            'minSpacingMinutes' => (int)($cfg['schedule']['minSpacingMinutes'] ?? 0),
             'fixedTimesCount' => is_array($cfg['schedule']['fixedTimes'] ?? null) ? count($cfg['schedule']['fixedTimes']) : 0,
             'timezone' => (string)($cfg['timezone'] ?? ''),
         ]);

@@ -35,9 +35,11 @@ final class Settings
             'timezone' => 'Asia/Tokyo',
             'schedule' => [
                 'enabled' => true,
-                'mode' => 'both',
+                'mode' => 'fixed',
                 'fixedTimes' => ['09:00', '13:00', '21:00'],
                 'intervalMinutes' => 480,
+                'perDayCount' => 3,
+                'minSpacingMinutes' => 120,
                 'jitterMinutes' => 0,
                 'skipIfEmpty' => true,
             ],

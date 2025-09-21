@@ -42,6 +42,7 @@ final class TitleLLM
                 $prompt = 'Task: Create a short, tasteful, minimalist photo title and select relevant tags, using the given candidate tag list.' . "\n"
                     . 'Language: ' . $language . ".\n"
                     . 'Title rules: subtle/evocative, not a literal description, tone ' . $tone . ', max ' . $maxTitle . ' chars, avoid: ' . implode(', ', $ngWords) . '. No hashtags, emojis, or quotes.' . "\n"
+                    . 'If a safe/appropriate title cannot be created (e.g., sensitive content), set the title to the string "none" but still return relevant tags.' . "\n"
                     . 'Tags rules: choose at most ' . $num . ' tags ONLY from the candidate list. Do not invent tags. Exclude the # symbol. If none are appropriate, use an empty array.' . "\n"
                     . 'Output format: JSON object with exactly these keys: {"title": string, "tags": string[]}. No extra text.' . "\n"
                     . 'Candidates (JSON array): ' . $listText;
@@ -103,6 +104,66 @@ final class TitleLLM
                         return ['title' => $outTitle, 'tags' => $outTags];
                     }
                 }
+                // Fallback: tags-only request if no structured result was obtained
+                // or if tags array ended up empty
+                try {
+                    $prompt = 'Task: Select relevant tags for a social media photo using ONLY the given candidate tag list, based on the attached image.' . "\n"
+                        . 'Language: ' . $language . ".\n"
+                        . 'Rules: choose at most ' . $num . ' tags ONLY from the candidate list. Do not invent tags. Exclude the # symbol. If none are appropriate, output an empty array.' . "\n"
+                        . 'Output format: JSON object with exactly this key: {"tags": string[]}. No extra text.' . "\n"
+                        . 'Candidates (JSON array): ' . $listText;
+                    $payload = [
+                        'model' => $model,
+                        'messages' => [[
+                            'role' => 'user',
+                            'content' => [
+                                ['type' => 'text', 'text' => $prompt],
+                                ['type' => 'image_url', 'image_url' => ['url' => 'data:image/jpeg;base64,' . $imgData]],
+                            ],
+                        ]],
+                        'max_tokens' => 150,
+                    ];
+                    $ch = curl_init('https://api.openai.com/v1/chat/completions');
+                    curl_setopt_array($ch, [
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_HTTPHEADER => [
+                            'Content-Type: application/json',
+                            'Authorization: Bearer ' . $apiKey,
+                        ],
+                        CURLOPT_POST => true,
+                        CURLOPT_POSTFIELDS => json_encode($payload),
+                        CURLOPT_TIMEOUT => 20,
+                    ]);
+                    $res = curl_exec($ch);
+                    if ($res === false) throw new \RuntimeException('curl error');
+                    $st = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    curl_close($ch);
+                    if ($st >= 200 && $st < 300) {
+                        $json = json_decode($res, true);
+                        $text = (string)($json['choices'][0]['message']['content'] ?? '');
+                        $trimmed = trim($text);
+                        $parsed = json_decode($trimmed, true);
+                        if (!is_array($parsed)) {
+                            if (preg_match('/\{[\s\S]*\}/', $trimmed, $m)) {
+                                $parsed = json_decode($m[0], true);
+                            }
+                        }
+                        if (is_array($parsed)) {
+                            $outTags = [];
+                            $tagsArr = is_array($parsed['tags'] ?? null) ? $parsed['tags'] : [];
+                            foreach ($tagsArr as $tg) {
+                                if (!is_string($tg)) continue;
+                                $tg = trim(ltrim($tg, '#'));
+                                if ($tg === '') continue;
+                                $outTags[] = $tg;
+                                if (count($outTags) >= $num) break;
+                            }
+                            return ['title' => '', 'tags' => $outTags];
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    // ignore and fallthrough to return empty
+                }
             } elseif ($provider === 'gemini') {
                 $geminiKey = $_ENV['GOOGLE_API_KEY'] ?? ($_ENV['GEMINI_API_KEY'] ?? '');
                 if ($geminiKey) {
@@ -121,6 +182,7 @@ final class TitleLLM
                     $prompt = 'Task: Create a short, tasteful, minimalist photo title and select relevant tags, using the given candidate tag list.' . "\n"
                         . 'Language: ' . $language . ".\n"
                         . 'Title rules: subtle/evocative, not a literal description, tone ' . $tone . ', max ' . $maxTitle . ' chars, avoid: ' . implode(', ', $ngWords) . '. No hashtags, emojis, or quotes.' . "\n"
+                        . 'If a safe/appropriate title cannot be created (e.g., sensitive content), set the title to the string "none" but still return relevant tags.' . "\n"
                         . 'Tags rules: choose at most ' . $num . ' tags ONLY from the candidate list. Do not invent tags. Exclude the # symbol. If none are appropriate, use an empty array.' . "\n"
                         . 'Output format: JSON object with exactly these keys: {"title": string, "tags": string[]}. No extra text.' . "\n"
                         . 'Candidates (JSON array): ' . $listText;
@@ -184,6 +246,69 @@ final class TitleLLM
                             }
                             return ['title' => $outTitle, 'tags' => $outTags];
                         }
+                    }
+                    // Fallback: tags-only request
+                    try {
+                        $prompt = 'Task: Select relevant tags for a social media photo using ONLY the given candidate tag list, based on the attached image.' . "\n"
+                            . 'Language: ' . $language . ".\n"
+                            . 'Rules: choose at most ' . $num . ' tags ONLY from the candidate list. Do not invent tags. Exclude the # symbol. If none are appropriate, output an empty array.' . "\n"
+                            . 'Output format: JSON object with exactly this key: {"tags": string[]}. No extra text.' . "\n"
+                            . 'Candidates (JSON array): ' . $listText;
+                        $payload = [
+                            'contents' => [[
+                                'role' => 'user',
+                                'parts' => [
+                                    ['text' => $prompt],
+                                    ['inline_data' => ['mime_type' => 'image/jpeg', 'data' => $imgData]],
+                                ],
+                            ]],
+                            'generationConfig' => [
+                                'maxOutputTokens' => 150,
+                            ],
+                        ];
+                        $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent?key=' . urlencode($geminiKey);
+                        $ch = curl_init($url);
+                        curl_setopt_array($ch, [
+                            CURLOPT_RETURNTRANSFER => true,
+                            CURLOPT_HTTPHEADER => [
+                                'Content-Type: application/json',
+                            ],
+                            CURLOPT_POST => true,
+                            CURLOPT_POSTFIELDS => json_encode($payload),
+                            CURLOPT_TIMEOUT => 20,
+                        ]);
+                        $res = curl_exec($ch);
+                        if ($res === false) throw new \RuntimeException('curl error');
+                        $st = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                        curl_close($ch);
+                        if ($st >= 200 && $st < 300) {
+                            $json = json_decode($res, true);
+                            $text = '';
+                            if (isset($json['candidates'][0]['content']['parts'][0]['text'])) {
+                                $text = (string)$json['candidates'][0]['content']['parts'][0]['text'];
+                            }
+                            $trimmed = trim($text);
+                            $parsed = json_decode($trimmed, true);
+                            if (!is_array($parsed)) {
+                                if (preg_match('/\{[\s\S]*\}/', $trimmed, $m)) {
+                                    $parsed = json_decode($m[0], true);
+                                }
+                            }
+                            if (is_array($parsed)) {
+                                $outTags = [];
+                                $tagsArr = is_array($parsed['tags'] ?? null) ? $parsed['tags'] : [];
+                                foreach ($tagsArr as $tg) {
+                                    if (!is_string($tg)) continue;
+                                    $tg = trim(ltrim($tg, '#'));
+                                    if ($tg === '') continue;
+                                    $outTags[] = $tg;
+                                    if (count($outTags) >= $num) break;
+                                }
+                                return ['title' => '', 'tags' => $outTags];
+                            }
+                        }
+                    } catch (\Throwable $e) {
+                        // ignore and fallthrough to return empty
                     }
                 }
             }

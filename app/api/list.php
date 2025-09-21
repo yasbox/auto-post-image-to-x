@@ -62,7 +62,8 @@ try {
     $cfg = Settings::get();
     $enabled = !isset($cfg['schedule']['enabled']) || (bool)$cfg['schedule']['enabled'];
     if ($enabled) {
-        $mode = (string)($cfg['schedule']['mode'] ?? 'both');
+        $mode = (string)($cfg['schedule']['mode'] ?? 'fixed');
+        if ($mode === 'both') { $mode = 'fixed'; }
         $fixedTimes = is_array($cfg['schedule']['fixedTimes'] ?? null) ? $cfg['schedule']['fixedTimes'] : [];
         $intervalMinutes = (int)($cfg['schedule']['intervalMinutes'] ?? 0);
         $fixedCount = count(array_filter($fixedTimes, fn($t) => is_string($t) && $t !== ''));
@@ -72,9 +73,8 @@ try {
             $postsPerDay = $fixedCount;
         } elseif ($mode === 'interval') {
             $postsPerDay = $intervalRate;
-        } else { // both
-            // Use sum to reflect both schedules potentially triggering within a day
-            $postsPerDay = $fixedCount + $intervalRate;
+        } elseif ($mode === 'per_day') {
+            $postsPerDay = max(1, (int)($cfg['schedule']['perDayCount'] ?? 0));
         }
         if ($postsPerDay > 0) {
             $aboutDays = (int)ceil(count($items) / $postsPerDay);

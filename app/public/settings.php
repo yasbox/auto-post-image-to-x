@@ -31,12 +31,18 @@ $cfg = Settings::get();
 </head>
 <body class="bg-gray-100">
 <div class="container mx-auto max-w-4xl p-6">
-  <div class="flex items-center mb-6">
-    <h1 class="text-2xl font-bold tracking-tight">設定</h1>
-    <a href="/" class="ml-auto btn-base btn-ghost px-4 py-2">← 戻る</a>
+  <div class="mb-6">
+    <div class="mx-auto max-w-4xl flex items-center">
+      <a href="/" class="btn-base btn-ghost px-4 py-2 mr-3">← 戻る</a>
+      <h1 class="text-2xl font-bold tracking-tight">設定</h1>
+      <div class="ml-auto flex items-center gap-2">
+        <span id="msg" class="text-sm text-gray-600 hidden sm:inline"></span>
+        <button type="button" id="btn-save-top" class="btn-base btn-primary px-4 py-2">保存</button>
+      </div>
+    </div>
   </div>
 
-  <form id="settings-form" class="space-y-6 max-w-3xl">
+  <form id="settings-form" class="ml-auto space-y-6 max-w-3xl">
     <input type="hidden" id="csrf" value="<?php echo htmlspecialchars(Csrf::issue(), ENT_QUOTES, 'UTF-8'); ?>" />
 
     <section class="card p-5">
@@ -48,19 +54,45 @@ $cfg = Settings::get();
         </label>
       </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <label class="block md:col-span-2">モード
-          <select id="schedule_mode" class="border rounded p-2 w-full">
-            <option value="fixed">固定時刻</option>
-            <option value="interval">一定間隔</option>
-            <option value="both">両方</option>
-          </select>
-        </label>
-        <label class="block">固定時刻（カンマ区切り HH:MM）
-          <input type="text" id="fixed" class="border rounded p-2 w-full" placeholder="09:00, 13:00, 21:00" />
-        </label>
-        <label class="block">間隔（分）
-          <input type="number" id="interval" class="border rounded p-2 w-full" min="0" />
-        </label>
+        <div id="mode_card_fixed" class="p-4 border rounded bg-white cursor-pointer select-none hover:border-blue-300 focus:outline-none" role="button" tabindex="0">
+          <label class="inline-flex items-center gap-2">
+            <input type="radio" name="schedule_mode" value="fixed" id="schedule_mode_fixed" class="h-4 w-4" />
+            <span class="font-medium">固定時刻</span>
+          </label>
+          <label class="block mt-3 text-sm text-gray-700">固定時刻（カンマ区切り HH:MM）
+            <input type="text" id="fixed" class="border rounded p-2 w-full" placeholder="09:00, 13:00, 21:00" />
+          </label>
+        </div>
+        <div id="mode_card_interval" class="p-4 border rounded bg-white cursor-pointer select-none hover:border-blue-300 focus:outline-none" role="button" tabindex="0">
+          <label class="inline-flex items-center gap-2">
+            <input type="radio" name="schedule_mode" value="interval" id="schedule_mode_interval" class="h-4 w-4" />
+            <span class="font-medium">一定間隔</span>
+          </label>
+          <label class="block mt-3 text-sm text-gray-700">間隔（分）
+            <input type="number" id="interval" class="border rounded p-2 w-full" min="0" />
+          </label>
+        </div>
+        <div id="mode_card_per_day" class="p-4 border rounded bg-white cursor-pointer select-none hover:border-blue-300 focus:outline-none md:col-span-2" role="button" tabindex="0">
+          <label class="inline-flex items-center gap-2">
+            <input type="radio" name="schedule_mode" value="per_day" id="schedule_mode_per_day" class="h-4 w-4" />
+            <span class="font-medium">1日あたりの投稿数（ランダム）</span>
+          </label>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-3">
+            <label class="block text-sm text-gray-700">投稿数（回/日）
+              <input type="number" id="perDayCount" class="border rounded p-2 w-full" min="1" max="24" step="1" />
+            </label>
+            <label class="block text-sm text-gray-700">最小間隔（分）
+              <input type="number" id="minSpacingMinutes" class="border rounded p-2 w-full" min="0" max="1440" step="1" />
+            </label>
+          </div>
+          <p class="text-xs text-gray-500 mt-2">日を等分して各ブロック内でランダムに時刻を選びます。偏り抑制のため日ごとに位相をランダム化し、最小間隔を守るよう調整します。</p>
+          <div class="mt-3">
+            <button type="button" id="btn-reschedule" class="btn-base btn-primary px-3 py-1 text-sm">スケジュール再生成</button>
+          </div>
+          <div class="mt-3">
+            <div id="perday-schedule" class="text-sm text-gray-700"></div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -147,10 +179,7 @@ $cfg = Settings::get();
       </div>
     </section>
 
-    <div class="flex gap-3">
-      <button type="button" id="btn-save" class="btn-base btn-primary px-5 py-2">保存</button>
-      <span id="msg" class="text-sm text-gray-600 self-center"></span>
-    </div>
+    
   </form>
 
   <script>
@@ -168,11 +197,75 @@ $cfg = Settings::get();
       return await res.json();
     }
 
+    function setDisabled(container, disabled){
+      if (!container) return;
+      const inputs = container.querySelectorAll('input, select, textarea, button');
+      inputs.forEach(el => {
+        if (el.type === 'radio') return; // do not disable radios in the card header
+        el.disabled = !!disabled;
+      });
+      if (disabled) {
+        container.classList.remove('ring-2','ring-blue-400','border-blue-300','bg-blue-50');
+        container.classList.add('opacity-60');
+      } else {
+        container.classList.remove('opacity-60');
+        container.classList.add('ring-2','ring-blue-400','border-blue-300','bg-blue-50');
+      }
+    }
+
+    function updateScheduleModeUI(){
+      const sel = document.querySelector('input[name="schedule_mode"]:checked');
+      const val = sel ? sel.value : 'fixed';
+      const fixedCard = document.getElementById('mode_card_fixed');
+      const intervalCard = document.getElementById('mode_card_interval');
+      const perDayCard = document.getElementById('mode_card_per_day');
+      setDisabled(fixedCard, val !== 'fixed');
+      setDisabled(intervalCard, val !== 'interval');
+      setDisabled(perDayCard, val !== 'per_day');
+      const btnRes = document.getElementById('btn-reschedule');
+      if (btnRes) btnRes.disabled = (val !== 'per_day');
+      if (val === 'per_day') { refreshPerDaySchedule(); }
+    }
+
+    async function refreshPerDaySchedule(){
+      const wrap = document.getElementById('perday-schedule');
+      if (!wrap) return;
+      wrap.textContent = '読み込み中…';
+      try {
+        const res = await apiGet('/api/schedule_get.php');
+        if (!res || !Array.isArray(res.items)) { wrap.textContent = ''; return; }
+        if (res.items.length === 0) { wrap.textContent = '今日のスケジュールはありません'; return; }
+        const frag = document.createDocumentFragment();
+        const list = document.createElement('div');
+        list.className = 'flex flex-wrap gap-2';
+        res.items.forEach(it => {
+          const b = document.createElement('span');
+          b.textContent = it.time;
+          b.className = 'px-2 py-1 rounded border text-xs ' + (it.status === 'upcoming' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : (it.status === 'past' ? 'bg-gray-50 border-gray-200 text-gray-500' : 'bg-blue-50 border-blue-200 text-blue-700'));
+          list.appendChild(b);
+        });
+        frag.appendChild(list);
+        wrap.innerHTML = '';
+        wrap.appendChild(frag);
+      } catch (e) {
+        wrap.textContent = '';
+      }
+    }
+
     function loadIntoForm(cfg){
       document.getElementById('schedule_enabled').checked = cfg.schedule.enabled !== false;
-      document.getElementById('schedule_mode').value = cfg.schedule.mode;
+      {
+        const m = (cfg.schedule.mode || 'fixed');
+        const allowed = ['fixed', 'interval', 'per_day'];
+        const val = allowed.includes(m) ? m : 'fixed';
+        const el = document.querySelector(`input[name="schedule_mode"][value="${val}"]`);
+        if (el) el.checked = true;
+      }
       document.getElementById('interval').value = cfg.schedule.intervalMinutes;
       document.getElementById('fixed').value = (cfg.schedule.fixedTimes || []).join(', ');
+      // per_day
+      document.getElementById('perDayCount').value = (typeof cfg.schedule.perDayCount === 'number' ? cfg.schedule.perDayCount : 3);
+      document.getElementById('minSpacingMinutes').value = (typeof cfg.schedule.minSpacingMinutes === 'number' ? cfg.schedule.minSpacingMinutes : 120);
       document.getElementById('chunkSize').value = cfg.upload.chunkSize;
       document.getElementById('concurrency').value = cfg.upload.concurrency;
       document.getElementById('allowedMime').value = (cfg.upload.allowedMime || []).join(', ');
@@ -193,6 +286,7 @@ $cfg = Settings::get();
       if (cfg.tagsText !== undefined) {
         document.getElementById('tagsText').value = cfg.tagsText;
       }
+      updateScheduleModeUI();
     }
 
     function collectFromForm(cur){
@@ -201,9 +295,11 @@ $cfg = Settings::get();
         schedule: {
           ...cur.schedule,
           enabled: document.getElementById('schedule_enabled').checked,
-          mode: document.getElementById('schedule_mode').value,
+          mode: (()=>{ const el = document.querySelector('input[name="schedule_mode"]:checked'); const v = el ? el.value : 'fixed'; return (v === 'fixed' || v === 'interval' || v === 'per_day') ? v : 'fixed'; })(),
           fixedTimes: document.getElementById('fixed').value.split(',').map(s=>s.trim()).filter(Boolean),
-          intervalMinutes: parseInt(document.getElementById('interval').value || '0', 10)
+          intervalMinutes: parseInt(document.getElementById('interval').value || '0', 10),
+          perDayCount: parseInt(document.getElementById('perDayCount').value || '0', 10),
+          minSpacingMinutes: parseInt(document.getElementById('minSpacingMinutes').value || '0', 10)
         },
         upload: {
           ...cur.upload,
@@ -247,10 +343,52 @@ $cfg = Settings::get();
     (async () => {
       const cur = await apiGet('/api/settings_get.php');
       loadIntoForm(cur);
-      document.getElementById('btn-save').onclick = async () => {
+      document.querySelectorAll('input[name="schedule_mode"]').forEach(el => {
+        el.addEventListener('change', updateScheduleModeUI);
+      });
+      const fixedCard = document.getElementById('mode_card_fixed');
+      const intervalCard = document.getElementById('mode_card_interval');
+      const perDayCard = document.getElementById('mode_card_per_day');
+      function selectMode(val){
+        const el = document.querySelector(`input[name="schedule_mode"][value="${val}"]`);
+        if (el) { el.checked = true; updateScheduleModeUI(); }
+      }
+      [
+        [fixedCard, 'fixed'],
+        [intervalCard, 'interval'],
+        [perDayCard, 'per_day']
+      ].forEach(([card, val]) => {
+        if (!card) return;
+        card.addEventListener('click', (e) => {
+          if (e.target && String(e.target.tagName).toLowerCase() === 'input') return;
+          selectMode(val);
+        });
+        card.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectMode(val); }
+        });
+      });
+      const onSave = async () => {
         const updated = collectFromForm(cur);
         await apiPost('/api/settings_set.php', updated);
-        const msg = document.getElementById('msg'); msg.textContent = '保存しました'; setTimeout(()=>msg.textContent='', 1500);
+        const msg = document.getElementById('msg'); if (msg){ msg.textContent = '保存しました'; msg.classList.remove('hidden'); setTimeout(()=>{ msg.textContent=''; msg.classList.add('hidden'); }, 1500); }
+      };
+      const btnTop = document.getElementById('btn-save-top');
+      if (btnTop) btnTop.onclick = onSave;
+      const btnRes = document.getElementById('btn-reschedule');
+      if (btnRes) btnRes.onclick = async () => {
+        const original = btnRes.textContent;
+        btnRes.disabled = true;
+        btnRes.textContent = '再生成中…';
+        try {
+          await apiPost('/api/reschedule.php', {});
+          const msg = document.getElementById('msg'); if (msg){ msg.textContent = '当日のスケジュールを再生成しました'; msg.classList.remove('hidden'); setTimeout(()=>{ msg.textContent=''; msg.classList.add('hidden'); }, 1800); }
+          refreshPerDaySchedule();
+        } catch (e) {
+          const msg = document.getElementById('msg'); if (msg){ msg.textContent = '再生成に失敗しました'; msg.classList.remove('hidden'); setTimeout(()=>{ msg.textContent=''; msg.classList.add('hidden'); }, 2000); }
+        } finally {
+          btnRes.disabled = false;
+          btnRes.textContent = original;
+        }
       };
     })();
   </script>
