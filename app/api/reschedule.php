@@ -72,7 +72,10 @@ for ($i = 0; $i < count($slots); $i++) {
 
 $state['dailyPlanDate'] = $date;
 $state['dailyPlanSlots'] = $slots;
-$state['lastDailySlotTs'] = 0;
+// Mark past slots as consumed to avoid catch-up bursts
+$baselineTs = 0;
+foreach ($slots as $s) { if ($s <= $now->getTimestamp() && $s > $baselineTs) { $baselineTs = $s; } }
+$state['lastDailySlotTs'] = $baselineTs;
 // Align with runner's change detection to avoid immediate regen
 $state['scheduleHash'] = $scheduleHashNow;
 Util::writeJson($stateFile, $state);

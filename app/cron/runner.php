@@ -128,7 +128,10 @@ try {
 
             $state['dailyPlanDate'] = $date;
             $state['dailyPlanSlots'] = $slots;
-            $state['lastDailySlotTs'] = 0; // reset consumption for the day
+            // Mark past slots as consumed to avoid catch-up bursts
+            $baselineTs = 0;
+            foreach ($slots as $s) { if ($s <= $nowTs && $s > $baselineTs) { $baselineTs = $s; } }
+            $state['lastDailySlotTs'] = $baselineTs;
             $state['scheduleHash'] = $scheduleHashNow;
             Util::writeJson($stateFile, $state);
             Logger::op(['event' => 'daily_plan_regen', 'count' => $count, 'minSpacingSec' => $minSpacingSec, 'effectiveMinSec' => $effectiveMin, 'slots' => $slots]);
