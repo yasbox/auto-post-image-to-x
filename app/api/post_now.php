@@ -45,6 +45,12 @@ try {
         $title = trim((string)($both['title'] ?? ''));
         $picked = is_array($both['tags'] ?? null) ? $both['tags'] : [];
         $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', (string)$t), $picked);
+        // Fallback: if LLM returned no tags, pick from tags.txt randomly
+        if (empty($hashtags)) {
+            shuffle($tags);
+            $picked = array_slice($tags, 0, $num);
+            $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', (string)$t), $picked);
+        }
     } else {
         // LLM disabled: old behavior (random hashtags only)
         shuffle($tags);
