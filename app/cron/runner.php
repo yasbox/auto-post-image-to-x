@@ -189,7 +189,7 @@ try {
     $title = '';
     $hashtags = [];
     $tagsFile = __DIR__ . '/../config/' . ($cfg['post']['hashtags']['source'] ?? 'tags.txt');
-    $tags = array_values(array_filter(array_map('trim', file_exists($tagsFile) ? file($tagsFile) : [])));
+    $tags = array_values(array_filter(array_map(fn($t) => preg_replace('/\s+/', ' ', ltrim(trim((string)$t), '#')), file_exists($tagsFile) ? file($tagsFile) : [])));
     $min = (int)($cfg['post']['hashtags']['min'] ?? 0);
     $max = (int)($cfg['post']['hashtags']['max'] ?? 0);
     $num = max($min, min($max, random_int($min, $max)));
