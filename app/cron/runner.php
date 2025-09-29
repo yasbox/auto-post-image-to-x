@@ -184,7 +184,7 @@ try {
     $id = $item['id'];
     $inboxPath = __DIR__ . '/../data/inbox/' . $item['file'];
 
-    // Title & Hashtags (single LLM call when enabled)
+    // Title (LLM) & Hashtags (random only)
     $preview = null;
     $title = '';
     $hashtags = [];
@@ -196,21 +196,11 @@ try {
     try {
         if (!isset($cfg['post']['title']['enabled']) || $cfg['post']['title']['enabled']) {
             $preview = ImageProc::makeLLMPreview($inboxPath, $cfg['imagePolicy'], $id);
-            $both = TitleLLM::generateAndPickTags($preview, $cfg['post']['title'], (int)$cfg['post']['textMax'], $cfg['post']['title']['ngWords'] ?? [], $tags, $num);
-            $title = trim((string)($both['title'] ?? ''));
-            $picked = is_array($both['tags'] ?? null) ? $both['tags'] : [];
-            $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', (string)$t), $picked);
-            // Fallback: if LLM returned no tags, pick from tags.txt randomly
-            if (empty($hashtags)) {
-                shuffle($tags);
-                $picked = array_slice($tags, 0, $num);
-                $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', (string)$t), $picked);
-            }
-        } else {
-            shuffle($tags);
-            $picked = array_slice($tags, 0, $num);
-            $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', (string)$t), $picked);
+            $title = trim((string) TitleLLM::generateTitle($preview, $cfg['post']['title'], $cfg['post']['title']['ngWords'] ?? []));
         }
+        shuffle($tags);
+        $picked = array_slice($tags, 0, $num);
+        $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', (string)$t), $picked);
     } catch (Throwable $e) {
         Logger::post(['level' => 'error', 'event' => 'title.fail', 'imageId' => $id, 'file' => $item['file'], 'error' => $e->getMessage()]);
         Failed::append($id, $item['file'], 'title', $e->getMessage());

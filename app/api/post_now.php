@@ -30,7 +30,7 @@ try {
     $id = $item['id'];
     $inboxPath = __DIR__ . '/../data/inbox/' . $item['file'];
 
-    // 2) Title & hashtags
+    // 2) Title (LLM) & hashtags (random only)
     $preview = null;
     $title = '';
     $hashtags = [];
@@ -41,22 +41,12 @@ try {
     $num = max($min, min($max, random_int($min, $max)));
     if (!isset($cfg['post']['title']['enabled']) || $cfg['post']['title']['enabled']) {
         $preview = ImageProc::makeLLMPreview($inboxPath, $cfg['imagePolicy'], $id);
-        $both = TitleLLM::generateAndPickTags($preview, $cfg['post']['title'], (int)$cfg['post']['textMax'], $cfg['post']['title']['ngWords'] ?? [], $tags, $num);
-        $title = trim((string)($both['title'] ?? ''));
-        $picked = is_array($both['tags'] ?? null) ? $both['tags'] : [];
-        $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', (string)$t), $picked);
-        // Fallback: if LLM returned no tags, pick from tags.txt randomly
-        if (empty($hashtags)) {
-            shuffle($tags);
-            $picked = array_slice($tags, 0, $num);
-            $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', (string)$t), $picked);
-        }
-    } else {
-        // LLM disabled: old behavior (random hashtags only)
-        shuffle($tags);
-        $picked = array_slice($tags, 0, $num);
-        $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', (string)$t), $picked);
+        $title = trim((string) TitleLLM::generateTitle($preview, $cfg['post']['title'], $cfg['post']['title']['ngWords'] ?? []));
     }
+    // hashtags: always random selection from tags list
+    shuffle($tags);
+    $picked = array_slice($tags, 0, $num);
+    $hashtags = array_map(fn($t) => '#' . preg_replace('/\s+/', '', (string)$t), $picked);
 
     // 4) text (hashtags + newline + title)
     $hashtagsStr = trim(implode(' ', $hashtags));

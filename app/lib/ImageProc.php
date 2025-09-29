@@ -22,7 +22,11 @@ final class ImageProc
         $dir = dirname($outPath);
         if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
         file_put_contents($outPath, $jpeg);
-        imagedestroy($img);
+        if (class_exists('Imagick') && is_a($img, 'Imagick')) {
+            if (method_exists($img, 'destroy')) { $img->destroy(); }
+        } else {
+            imagedestroy($img);
+        }
         if ($prevMem !== null) { @ini_set('memory_limit', $prevMem); }
         return $outPath;
     }
@@ -34,14 +38,27 @@ final class ImageProc
         $jpeg = self::encodeJPEG($img, (int)$p['llmPreviewQuality'], (bool)$p['stripMetadataOnLLM']);
         $out = __DIR__ . '/../data/tmp/llm/' . $id . '.jpg';
         file_put_contents($out, $jpeg);
-        imagedestroy($img);
+        if (class_exists('Imagick') && is_a($img, 'Imagick')) {
+            if (method_exists($img, 'destroy')) { $img->destroy(); }
+        } else {
+            imagedestroy($img);
+        }
         return $out;
     }
 
     public static function makeTweetImage(string $srcPath, array $p, string $id): string
     {
+		$__t0 = microtime(true);
         [$img, $w, $h] = self::loadBitmap($srcPath);
+        \App\Lib\Logger::post([
+            'level' => 'info', 'event' => 'opt.trace.start', 'imageId' => $id,
+            'srcW' => $w, 'srcH' => $h, 'maxLongEdge' => (int)$p['tweetMaxLongEdge'],
+        ]);
         [$img, $w, $h] = self::resizeMaxLongEdge($img, $w, $h, (int)$p['tweetMaxLongEdge']);
+		\App\Lib\Logger::post([
+			'level' => 'info', 'event' => 'opt.trace.resized', 'imageId' => $id,
+			'w' => $w, 'h' => $h,
+		]);
         $qMin = (int)$p['tweetQualityMin'];
         $qMax = (int)$p['tweetQualityMax'];
         $best = null;
@@ -51,40 +68,100 @@ final class ImageProc
         while ($hi - $lo > 2) {
             $q = intdiv($lo + $hi, 2);
             $buf = self::encodeJPEG($img, $q, (bool)$p['stripMetadataOnTweet']);
-            if (strlen($buf) <= (int)$p['tweetMaxBytes']) { $best = $buf; $lo = $q; } else { $hi = $q; }
+			$bytes = strlen($buf);
+			$limit = (int)$p['tweetMaxBytes'];
+			\App\Lib\Logger::post([
+				'level' => 'info', 'event' => 'opt.trace.search', 'imageId' => $id,
+				'q' => $q, 'bytes' => $bytes, 'within' => $bytes <= $limit, 'lo' => $lo, 'hi' => $hi,
+			]);
+			if ($bytes <= $limit) { $best = $buf; $lo = $q; } else { $hi = $q; }
         }
 
         $out = __DIR__ . '/../data/tmp/tweet/' . $id . '.jpg';
         $attempt = 0;
         if ($best && strlen($best) <= (int)$p['tweetMaxBytes']) {
             file_put_contents($out, $best);
-            imagedestroy($img);
+            \App\Lib\Logger::post([
+				'level' => 'info', 'event' => 'opt.trace.done', 'imageId' => $id,
+				'q' => $lo, 'bytes' => strlen($best), 'elapsedMs' => (int)round((microtime(true)-$__t0)*1000),
+			]);
+            if (class_exists('Imagick') && is_a($img, 'Imagick')) {
+                if (method_exists($img, 'destroy')) { $img->destroy(); }
+            } else {
+                imagedestroy($img);
+            }
             return $out;
         }
 
         // Fallback: scale down up to 5 times
         while ($attempt < 5) {
             $attempt++;
-            [$img, $w, $h] = self::resizeScale($img, $w, $h, 0.9);
+            if (class_exists('Imagick') && is_a($img, 'Imagick')) {
+                $w = max(1, (int)round($w * 0.9));
+                $h = max(1, (int)round($h * 0.9));
+                if (method_exists($img, 'resizeImage')) { $img->resizeImage($w, $h, 0 /* FILTER_UNDEFINED */, 1); }
+            } else {
+                [$img, $w, $h] = self::resizeScale($img, $w, $h, 0.9);
+            }
+			\App\Lib\Logger::post([
+				'level' => 'info', 'event' => 'opt.trace.scale', 'imageId' => $id,
+				'attempt' => $attempt, 'w' => $w, 'h' => $h,
+			]);
             $lo = $qMin; $hi = $qMax; $best = null;
             while ($hi - $lo > 2) {
                 $q = intdiv($lo + $hi, 2);
                 $buf = self::encodeJPEG($img, $q, (bool)$p['stripMetadataOnTweet']);
-                if (strlen($buf) <= (int)$p['tweetMaxBytes']) { $best = $buf; $lo = $q; } else { $hi = $q; }
+				$bytes = strlen($buf);
+				$limit = (int)$p['tweetMaxBytes'];
+				\App\Lib\Logger::post([
+					'level' => 'info', 'event' => 'opt.trace.search', 'imageId' => $id,
+					'q' => $q, 'bytes' => $bytes, 'within' => $bytes <= $limit, 'lo' => $lo, 'hi' => $hi, 'attempt' => $attempt,
+				]);
+				if ($bytes <= $limit) { $best = $buf; $lo = $q; } else { $hi = $q; }
             }
             if ($best && strlen($best) <= (int)$p['tweetMaxBytes']) {
                 file_put_contents($out, $best);
-                imagedestroy($img);
+                \App\Lib\Logger::post([
+					'level' => 'info', 'event' => 'opt.trace.done', 'imageId' => $id,
+					'q' => $lo, 'bytes' => strlen($best), 'attempt' => $attempt, 'elapsedMs' => (int)round((microtime(true)-$__t0)*1000),
+				]);
+                if (class_exists('Imagick') && is_a($img, 'Imagick')) {
+                    if (method_exists($img, 'destroy')) { $img->destroy(); }
+                } else {
+                    imagedestroy($img);
+                }
                 return $out;
             }
         }
 
-        imagedestroy($img);
+        if (class_exists('Imagick') && is_a($img, 'Imagick')) {
+            if (method_exists($img, 'destroy')) { $img->destroy(); }
+        } else {
+            imagedestroy($img);
+        }
+		\App\Lib\Logger::post([
+			'level' => 'error', 'event' => 'opt.trace.fail', 'imageId' => $id,
+			'elapsedMs' => (int)round((microtime(true)-$__t0)*1000),
+		]);
         throw new \RuntimeException('Cannot fit under size limit');
     }
 
     private static function loadBitmap(string $path): array
     {
+        // Prefer Imagick when available for speed/memory efficiency on large images
+        if (class_exists('Imagick')) {
+            try {
+                /** @var object $im */
+                $cls = 'Imagick';
+                $im = new $cls();
+                $im->readImage($path);
+                $w = $im->getImageWidth();
+                $h = $im->getImageHeight();
+                return [$im, $w, $h];
+            } catch (\Throwable $e) {
+                // fallback to GD below
+            }
+        }
         $info = getimagesize($path);
         if (!$info) throw new \InvalidArgumentException('Invalid image');
         $mime = $info['mime'];
@@ -101,6 +178,12 @@ final class ImageProc
         $long = max($w, $h);
         if ($long <= $max) return [$img, $w, $h];
         $scale = $max / $long;
+        if (class_exists('Imagick') && is_a($img, 'Imagick')) {
+            $nw = max(1, (int)round($w * $scale));
+            $nh = max(1, (int)round($h * $scale));
+            if (method_exists($img, 'resizeImage')) { $img->resizeImage($nw, $nh, 12 /* LANCZOS */, 1); }
+            return [$img, $nw, $nh];
+        }
         return self::resizeScale($img, $w, $h, $scale);
     }
 
@@ -116,6 +199,16 @@ final class ImageProc
 
     private static function encodeJPEG($img, int $quality, bool $stripMeta): string
     {
+        if (class_exists('Imagick') && is_a($img, 'Imagick')) {
+            try {
+                if ($stripMeta && method_exists($img, 'stripImage')) { $img->stripImage(); }
+                if (method_exists($img, 'setImageFormat')) { $img->setImageFormat('jpeg'); }
+                if (method_exists($img, 'setImageCompressionQuality')) { $img->setImageCompressionQuality($quality); }
+                return (string)(method_exists($img, 'getImageBlob') ? $img->getImageBlob() : '');
+            } catch (\Throwable $e) {
+                // fallthrough to GD fallback below
+            }
+        }
         ob_start();
         imageinterlace($img, false);
         imagejpeg($img, null, $quality);

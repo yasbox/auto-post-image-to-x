@@ -8,6 +8,8 @@ RUN apt-get update \
     libwebp-dev \
     libfreetype6-dev \
     zlib1g-dev \
+    imagemagick \
+    libmagickwand-dev \
     libzip-dev \
     unzip \
     git \
@@ -24,6 +26,10 @@ RUN docker-php-ext-configure gd \
 
 # Install additional PHP extensions
 RUN docker-php-ext-install -j$(nproc) zip
+
+# Install imagick via PECL
+RUN pecl install imagick \
+  && docker-php-ext-enable imagick
 
 # Enable Apache modules
 RUN a2enmod rewrite headers

@@ -227,6 +227,16 @@ $cfg = Settings::get();
       if (val === 'per_day') { refreshPerDaySchedule(); }
     }
 
+    function getDefaultModelForProvider(provider){
+      switch (provider) {
+        case 'gemini':
+          return 'gemini-2.5-flash-lite';
+        case 'openai':
+        default:
+          return 'gpt-4o-mini';
+      }
+    }
+
     async function refreshPerDaySchedule(){
       const wrap = document.getElementById('perday-schedule');
       if (!wrap) return;
@@ -270,7 +280,7 @@ $cfg = Settings::get();
       document.getElementById('concurrency').value = cfg.upload.concurrency;
       document.getElementById('allowedMime').value = (cfg.upload.allowedMime || []).join(', ');
       document.getElementById('llm_provider').value = (cfg.post.llm && cfg.post.llm.provider) ? cfg.post.llm.provider : 'openai';
-      document.getElementById('llm_model').value = (cfg.post.llm && cfg.post.llm.model) ? cfg.post.llm.model : (document.getElementById('llm_provider').value === 'gemini' ? 'gemini-1.5-flash' : 'gpt-4o-mini');
+      document.getElementById('llm_model').value = (cfg.post.llm && cfg.post.llm.model) ? cfg.post.llm.model : getDefaultModelForProvider(document.getElementById('llm_provider').value);
       document.getElementById('title_max').value = cfg.post.title.maxChars;
       document.getElementById('title_tone').value = cfg.post.title.tone;
       document.getElementById('title_ng').value = (cfg.post.title.ngWords || []).join(', ');
@@ -367,6 +377,13 @@ $cfg = Settings::get();
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectMode(val); }
         });
       });
+      const provEl = document.getElementById('llm_provider');
+      if (provEl) {
+        provEl.addEventListener('change', () => {
+          const modelEl = document.getElementById('llm_model');
+          if (modelEl) modelEl.value = getDefaultModelForProvider(provEl.value);
+        });
+      }
       const onSave = async () => {
         const updated = collectFromForm(cur);
         // Detect changes relevant to per_day reschedule
