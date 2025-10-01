@@ -50,10 +50,6 @@ final class Settings
                 'maxClientFileSizeHintMB' => 8192,
             ],
             'post' => [
-                'llm' => [
-                    'provider' => 'openai',
-                    'model' => 'gpt-4o-mini',
-                ],
                 'title' => [
                     'enabled' => true,
                     'language' => 'en',

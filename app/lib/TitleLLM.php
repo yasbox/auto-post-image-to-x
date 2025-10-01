@@ -16,8 +16,11 @@ final class TitleLLM
     {
         $cfg = Settings::get();
         $cfgLlm = is_array($cfg['post']['llm'] ?? null) ? $cfg['post']['llm'] : [];
-        $provider = $_ENV['LLM_PROVIDER'] ?? (string)($cfgLlm['provider'] ?? 'openai');
-        $model = $_ENV['LLM_MODEL'] ?? (string)($cfgLlm['model'] ?? ($provider === 'gemini' ? 'gemini-2.5-flash-lite' : 'gpt-4o-mini'));
+        $provider = (string)($cfgLlm['provider'] ?? '');
+        $model = (string)($cfgLlm['model'] ?? '');
+        if ($provider === '' || $model === '') {
+            throw new \RuntimeException('LLM provider/model not configured');
+        }
         $apiKey = $_ENV['OPENAI_API_KEY'] ?? '';
         $language = $titleCfg['language'] ?? 'en';
         $maxTitle = (int)($titleCfg['maxChars'] ?? 80);

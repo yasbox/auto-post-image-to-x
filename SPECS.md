@@ -145,8 +145,7 @@ License: Private
     GOOGLE_API_KEY=***
     # または
     GEMINI_API_KEY=***
-    LLM_PROVIDER=openai   # openai | gemini
-    LLM_MODEL=gpt-4o-mini # 例: gpt-4o-mini / gemini-1.5-flash
+    # LLM_PROVIDER / LLM_MODEL は使用しません（config.json で指定）
     # いずれか（または両方）
     # OAuth2 ユーザーコンテキスト（任意・あれば使用）
     X_OAUTH2_ACCESS_TOKEN=***
