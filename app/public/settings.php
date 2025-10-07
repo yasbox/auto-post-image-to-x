@@ -397,8 +397,10 @@ $cfg = Settings::get();
         const switchedToPerDay = (prevMode !== 'per_day' && newMode === 'per_day');
         const changedCount = (newCount !== prevCount);
         const changedSpacing = (newSpacing !== prevSpacing);
+        const prevEnabled = !(prev.schedule && prev.schedule.enabled === false);
         const enabled = !(updated.schedule && updated.schedule.enabled === false);
-        const shouldAutoReschedule = enabled && newMode === 'per_day' && (switchedToPerDay || changedCount || changedSpacing);
+        const enabledJustTurnedOn = (!prevEnabled && enabled);
+        const shouldAutoReschedule = enabled && newMode === 'per_day' && (switchedToPerDay || changedCount || changedSpacing || enabledJustTurnedOn);
 
         await apiPost('/api/settings_set.php', updated);
         // Auto-reschedule only when relevant fields changed
