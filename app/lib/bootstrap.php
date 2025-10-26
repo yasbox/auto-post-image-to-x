@@ -42,7 +42,19 @@ if (is_file($base . '/config/.env')) {
 
 // Configure session persistence (30 days)
 $secure = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on';
-@ini_set('session.gc_maxlifetime', (string)(60 * 60 * 24 * 30));
+
+// Use dedicated session directory to avoid shared hosting GC issues
+$sessionDir = $base . '/data/sessions';
+if (!is_dir($sessionDir)) { @mkdir($sessionDir, 0700, true); }
+if (is_writable($sessionDir)) {
+    ini_set('session.save_path', $sessionDir);
+}
+
+// Set session lifetime to 30 days
+ini_set('session.gc_maxlifetime', (string)(60 * 60 * 24 * 30));
+ini_set('session.gc_probability', '1');
+ini_set('session.gc_divisor', '100');
+
 if (function_exists('session_set_cookie_params')) {
     session_set_cookie_params([
         'lifetime' => 60 * 60 * 24 * 30,

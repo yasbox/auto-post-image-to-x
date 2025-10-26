@@ -8,6 +8,7 @@ app/logs/*
 app/data/tmp/*
 app/data/inbox/*
 app/data/thumbs/*
+app/data/sessions/*
 app/data/meta/queue.json
 app/data/meta/state.json
 app/data/meta/*.lock
