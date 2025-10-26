@@ -146,6 +146,44 @@ $cfg = Settings::get();
     </section>
 
     <section class="card p-5">
+      <h2 class="font-semibold mb-3 tracking-tight">センシティブ判定</h2>
+      <div class="grid grid-cols-1 gap-5">
+        <label class="block">
+          <span class="inline-flex items-center gap-2">
+            <input type="checkbox" id="sensitive_enabled" class="h-4 w-4" />
+            <span>センシティブ判定を有効にする</span>
+          </span>
+          <p class="text-xs text-gray-500 mt-1">画像を投稿前にAIで分析し、センシティブと判定された場合は自動的にセンシティブフラグを付けて投稿します。</p>
+        </label>
+        
+        <label class="block">判定API
+          <select id="sensitive_provider" class="border rounded p-2 w-full">
+            <option value="gemini">Google Gemini（推奨・月1,500枚まで無料）</option>
+            <option value="openai">OpenAI GPT-4o-mini（有料・高精度）</option>
+          </select>
+          <p class="text-xs text-gray-500 mt-1">OpenAIは `OPENAI_API_KEY`、Geminiは `GOOGLE_API_KEY`（または `GEMINI_API_KEY`）を `app/config/.env` に設定してください。</p>
+        </label>
+        
+        <label class="block">モデル名
+          <input type="text" id="sensitive_model" class="border rounded p-2 w-full" placeholder="例: gemini-2.5-flash-lite / gpt-4o-mini" />
+          <p class="text-xs text-gray-500 mt-1">デフォルト: Gemini は `gemini-2.5-flash-lite`、OpenAI は `gpt-4o-mini`</p>
+        </label>
+        
+        <label class="block">判定閾値（この値以上でセンシティブ判定）
+          <input type="number" id="sensitive_threshold" min="0" max="100" class="border rounded p-2 w-full" />
+          <p class="text-xs text-gray-500 mt-1">
+            0-30: 完全セーフ / 31-50: 軽度注意 / 51-70: センシティブ推奨 / 71-90: ぼかし確定 / 91-100: 成人向け<br>
+            推奨値: 51-61（グラビア・水着でも露出多めはフラグ付き投稿）
+          </p>
+        </label>
+        
+        <div class="bg-yellow-50 border border-yellow-200 rounded p-3 text-sm text-yellow-800">
+          <strong>注意:</strong> API呼び出しが失敗した場合、その画像は投稿されず失敗一覧に追加されます。判定が不要な場合は、この機能を無効にしてください。
+        </div>
+      </div>
+    </section>
+
+    <section class="card p-5">
       <h2 class="font-semibold mb-3 tracking-tight">ハッシュタグ</h2>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
         <label class="block">最小
@@ -286,6 +324,15 @@ $cfg = Settings::get();
       document.getElementById('title_ng').value = (cfg.post.title.ngWords || []).join(', ');
       document.getElementById('title_enabled').checked = (cfg.post.title.enabled !== false);
       document.getElementById('textMax').value = cfg.post.textMax;
+      // センシティブ判定
+      const sensEnabled = document.getElementById('sensitive_enabled');
+      const sensProvider = document.getElementById('sensitive_provider');
+      const sensModel = document.getElementById('sensitive_model');
+      const sensThreshold = document.getElementById('sensitive_threshold');
+      if (sensEnabled) sensEnabled.checked = (cfg.sensitiveDetection && cfg.sensitiveDetection.enabled) || false;
+      if (sensProvider) sensProvider.value = (cfg.sensitiveDetection && cfg.sensitiveDetection.provider) || 'gemini';
+      if (sensModel) sensModel.value = (cfg.sensitiveDetection && cfg.sensitiveDetection.model) || '';
+      if (sensThreshold) sensThreshold.value = (cfg.sensitiveDetection && typeof cfg.sensitiveDetection.threshold === 'number') ? cfg.sensitiveDetection.threshold : 61;
       document.getElementById('tag_min').value = cfg.post.hashtags.min;
       document.getElementById('tag_max').value = cfg.post.hashtags.max;
       document.getElementById('tag_prepend').value = cfg.post.hashtags.prepend ? 'true' : 'false';
@@ -346,6 +393,13 @@ $cfg = Settings::get();
           tweetQualityMin: parseInt(document.getElementById('tweetQualityMin').value || '0', 10),
           tweetQualityMax: parseInt(document.getElementById('tweetQualityMax').value || '0', 10)
         },
+        sensitiveDetection: {
+          ...(cur.sensitiveDetection || {}),
+          enabled: document.getElementById('sensitive_enabled').checked,
+          provider: document.getElementById('sensitive_provider').value,
+          model: document.getElementById('sensitive_model').value || (document.getElementById('sensitive_provider').value === 'gemini' ? 'gemini-2.5-flash-lite' : 'gpt-4o-mini'),
+          threshold: parseInt(document.getElementById('sensitive_threshold').value || '61', 10)
+        },
         tagsText: (document.getElementById('tagsText').value || '').replace(/\r\n/g, '\n')
       };
     }
@@ -382,6 +436,14 @@ $cfg = Settings::get();
         provEl.addEventListener('change', () => {
           const modelEl = document.getElementById('llm_model');
           if (modelEl) modelEl.value = getDefaultModelForProvider(provEl.value);
+        });
+      }
+      // センシティブ判定APIプロバイダ変更時にもデフォルトモデルを自動入力
+      const sensProvEl = document.getElementById('sensitive_provider');
+      if (sensProvEl) {
+        sensProvEl.addEventListener('change', () => {
+          const sensModelEl = document.getElementById('sensitive_model');
+          if (sensModelEl) sensModelEl.value = getDefaultModelForProvider(sensProvEl.value);
         });
       }
       const onSave = async () => {

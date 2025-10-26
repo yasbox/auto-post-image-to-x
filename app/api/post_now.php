@@ -8,6 +8,7 @@ use App\Lib\Lock;
 use App\Lib\Logger;
 use App\Lib\Queue;
 use App\Lib\Failed;
+use App\Lib\SensitiveDetector;
 use App\Lib\Settings;
 use App\Lib\TitleLLM;
 use App\Lib\Util;
@@ -78,9 +79,70 @@ try {
         Util::jsonResponse(['error' => 'optimize_fail'], 500);
     }
 
+    // 5.5) センシティブ判定
+    $isSensitive = false;
+    if (!empty($cfg['sensitiveDetection']['enabled'])) {
+        $provider = (string)($cfg['sensitiveDetection']['provider'] ?? 'gemini');
+        $threshold = (int)($cfg['sensitiveDetection']['threshold'] ?? 61);
+        
+        try {
+            $result = SensitiveDetector::analyze($tweetPath, $provider);
+            
+            if (isset($result['error']) && $result['error']) {
+                // API失敗 → アウト判定として失敗一覧に追加
+                Logger::post(['level' => 'error', 'event' => 'sensitive_check.fail', 
+                             'imageId' => $id, 'error' => $result['message']]);
+                Failed::append($id, $item['file'], 'sensitive_check', 
+                              'センシティブ判定APIエラー: ' . $result['message']);
+                \App\Lib\Logger::op(['event' => 'failed.append', 'imageId' => $id, 'file' => $item['file'], 'stage' => 'sensitive_check']);
+                array_shift($q['items']);
+                Queue::save($q);
+                @unlink($tweetPath);
+                if (!empty($preview)) { @unlink($preview); }
+                // also advance scheduling state
+                $stateFile = __DIR__ . '/../data/meta/state.json';
+                $state = Util::readJson($stateFile, ['lastPostAt' => 0, 'lastFixedSlotTs' => 0, 'scheduleHash' => '']);
+                $state['lastPostAt'] = time();
+                Util::writeJson($stateFile, $state);
+                Util::jsonResponse(['error' => 'sensitive_check_fail', 'message' => $result['message']], 500);
+            }
+            
+            $isSensitive = $result['score'] >= $threshold;
+            Logger::post([
+                'level' => 'info', 
+                'event' => 'sensitive_check.done',
+                'imageId' => $id,
+                'score' => $result['score'],
+                'judgment' => $result['judgment'],
+                'reason' => $result['reason'],
+                'flagged' => $isSensitive
+            ]);
+            
+        } catch (\Throwable $e) {
+            // 予期せぬエラー → アウト判定
+            Logger::post(['level' => 'error', 'event' => 'sensitive_check.exception', 
+                         'imageId' => $id, 'error' => $e->getMessage()]);
+            Failed::append($id, $item['file'], 'sensitive_check', 
+                          'センシティブ判定エラー: ' . $e->getMessage());
+            \App\Lib\Logger::op(['event' => 'failed.append', 'imageId' => $id, 'file' => $item['file'], 'stage' => 'sensitive_check']);
+            array_shift($q['items']);
+            Queue::save($q);
+            @unlink($tweetPath);
+            if (!empty($preview)) { @unlink($preview); }
+            // also advance scheduling state
+            $stateFile = __DIR__ . '/../data/meta/state.json';
+            $state = Util::readJson($stateFile, ['lastPostAt' => 0, 'lastFixedSlotTs' => 0, 'scheduleHash' => '']);
+            $state['lastPostAt'] = time();
+            Util::writeJson($stateFile, $state);
+            Util::jsonResponse(['error' => 'sensitive_check_exception', 'message' => $e->getMessage()], 500);
+        }
+    }
+
     // 6-7) X upload + post
     $client = new XClient();
     $mediaId = $client->uploadMedia($tweetPath);
+    // センシティブメタデータを設定
+    $client->setMediaMetadata($mediaId, $isSensitive);
     $res = $client->postTweet($text, $mediaId);
 
     // 8) cleanup

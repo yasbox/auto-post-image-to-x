@@ -59,12 +59,62 @@ final class XClient
         return $mediaId;
     }
 
+    /**
+     * メディアにセンシティブメタデータを設定
+     * 
+     * @param string $mediaId メディアID
+     * @param bool $isSensitive センシティブフラグ
+     * @return void
+     */
+    public function setMediaMetadata(string $mediaId, bool $isSensitive): void
+    {
+        if (!$isSensitive) {
+            return; // センシティブでない場合は何もしない
+        }
+
+        if (!$this->hasOAuth1()) {
+            throw new \RuntimeException('OAuth1 tokens missing for media metadata');
+        }
+
+        // sensitive_media_warning に "other" を設定（汎用的なセンシティブコンテンツ）
+        $payload = [
+            'media_id' => $mediaId,
+            'sensitive_media_warning' => ['other'],
+        ];
+
+        $url = 'https://upload.twitter.com/1.1/media/metadata/create.json';
+        $headers = $this->buildOAuth1Header('POST', $url, []);
+        
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => array_merge($headers, ['Content-Type: application/json']),
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_TIMEOUT => 30,
+        ]);
+
+        $res = curl_exec($ch);
+        $st = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($res === false) {
+            throw new \RuntimeException('metadata request failed');
+        }
+
+        // 204 No Content が成功レスポンス
+        if ($st !== 204 && ($st < 200 || $st >= 300)) {
+            throw new \RuntimeException('HTTP ' . $st . ': ' . $res);
+        }
+    }
+
     public function postTweet(string $text, string $mediaId): array
     {
         $payload = [
             'text' => $text,
             'media' => ['media_ids' => [$mediaId]],
         ];
+        
         // OAuth2 ユーザーコンテキストがあれば優先、無ければ OAuth1 で署名
         if ($this->oauth2Token !== '') {
             $ch = curl_init('https://api.twitter.com/2/tweets');

@@ -57,6 +57,12 @@
         "useAltText": false,
         "duplicateCheck": false
     },
+    "sensitiveDetection": {
+        "enabled": false,
+        "provider": "gemini",
+        "model": "gemini-2.5-flash-lite",
+        "threshold": 61
+    },
     "security": {
         "sessionName": "XPOSTSESS",
         "csrfCookieName": "XPOSTCSRF",
