@@ -64,9 +64,11 @@ final class XClient
      * 
      * @param string $mediaId メディアID
      * @param bool $isSensitive センシティブフラグ
+     * @param int $score センシティブ判定スコア（0-100）
+     * @param int $adultContentThreshold 成人向けコンテンツ判定の閾値（この値以上でadult_content）
      * @return void
      */
-    public function setMediaMetadata(string $mediaId, bool $isSensitive): void
+    public function setMediaMetadata(string $mediaId, bool $isSensitive, int $score = 0, int $adultContentThreshold = 71): void
     {
         if (!$isSensitive) {
             return; // センシティブでない場合は何もしない
@@ -76,10 +78,14 @@ final class XClient
             throw new \RuntimeException('OAuth1 tokens missing for media metadata');
         }
 
-        // sensitive_media_warning に "other" を設定（汎用的なセンシティブコンテンツ）
+        // スコアに基づいてカテゴリを選択
+        // adultContentThreshold以上: adult_content（ヌード・成人向け確定）
+        // threshold以上でadultContentThreshold未満: other（グラビア・露出多め）
+        $category = ($score >= $adultContentThreshold) ? ['adult_content'] : ['other'];
+        
         $payload = [
             'media_id' => $mediaId,
-            'sensitive_media_warning' => ['other'],
+            'sensitive_media_warning' => $category,
         ];
 
         $url = 'https://upload.twitter.com/1.1/media/metadata/create.json';

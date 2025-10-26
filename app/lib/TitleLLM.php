@@ -118,6 +118,13 @@ final class TitleLLM
                         'generationConfig' => [
                             'maxOutputTokens' => 512
                         ],
+                        // 安全設定を緩和（高リスクコンテンツのみブロック）
+                        'safetySettings' => [
+                            ['category' => 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'threshold' => 'BLOCK_ONLY_HIGH'],
+                            ['category' => 'HARM_CATEGORY_HATE_SPEECH', 'threshold' => 'BLOCK_ONLY_HIGH'],
+                            ['category' => 'HARM_CATEGORY_HARASSMENT', 'threshold' => 'BLOCK_ONLY_HIGH'],
+                            ['category' => 'HARM_CATEGORY_DANGEROUS_CONTENT', 'threshold' => 'BLOCK_ONLY_HIGH'],
+                        ],
                     ];
                     $url = 'https://generativelanguage.googleapis.com/v1/models/' . rawurlencode($model) . ':generateContent?key=' . urlencode($geminiKey);
                     $t0 = microtime(true);
@@ -148,6 +155,31 @@ final class TitleLLM
                     ]);
                     if ($st >= 200 && $st < 300 && is_string($res)) {
                         $json = json_decode($res, true);
+                        
+                        // Geminiの安全フィルターによるブロックをチェック
+                        if (isset($json['promptFeedback']['blockReason'])) {
+                            \App\Lib\Logger::post([
+                                'level' => 'warn',
+                                'event' => 'llm.blocked_by_gemini',
+                                'provider' => 'gemini',
+                                'blockReason' => $json['promptFeedback']['blockReason'],
+                                'imageId' => $id ?? null,
+                            ]);
+                            // ブロックされた場合は空のタイトルを返す（投稿は続行）
+                            return '';
+                        }
+                        
+                        // candidatesがない場合もブロックの可能性
+                        if (empty($json['candidates'])) {
+                            \App\Lib\Logger::post([
+                                'level' => 'warn',
+                                'event' => 'llm.no_candidates',
+                                'provider' => 'gemini',
+                                'imageId' => $id ?? null,
+                            ]);
+                            return '';
+                        }
+                        
                         $finish = $json['candidates'][0]['finishReason'] ?? null;
                         $parts = $json['candidates'][0]['content']['parts'] ?? [];
                         $text = '';

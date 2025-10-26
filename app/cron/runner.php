@@ -185,6 +185,9 @@ try {
     $id = $item['id'];
     $inboxPath = __DIR__ . '/../data/inbox/' . $item['file'];
 
+    // Log post start (for clear log separation)
+    Logger::post(['level' => 'info', 'event' => 'post.start', 'imageId' => $id, 'file' => $item['file']]);
+
     // Title (LLM) & Hashtags (random only)
     $preview = null;
     $title = '';
@@ -240,9 +243,11 @@ try {
 
     // センシティブ判定
     $isSensitive = false;
+    $sensitiveScore = 0;
     if (!empty($cfg['sensitiveDetection']['enabled'])) {
         $provider = (string)($cfg['sensitiveDetection']['provider'] ?? 'gemini');
         $threshold = (int)($cfg['sensitiveDetection']['threshold'] ?? 61);
+        $adultContentThreshold = (int)($cfg['sensitiveDetection']['adultContentThreshold'] ?? 71);
         
         try {
             $result = SensitiveDetector::analyze($tweetPath, $provider);
@@ -263,15 +268,22 @@ try {
                 exit(0);
             }
             
-            $isSensitive = $result['score'] >= $threshold;
+            $sensitiveScore = (int)$result['score'];
+            $isSensitive = $sensitiveScore >= $threshold;
+            $category = $isSensitive ? (($sensitiveScore >= $adultContentThreshold) ? 'adult_content' : 'other') : 'none';
             Logger::post([
                 'level' => 'info', 
                 'event' => 'sensitive_check.done',
                 'imageId' => $id,
-                'score' => $result['score'],
+                'provider' => $result['provider'] ?? $provider,
+                'score' => $sensitiveScore,
                 'judgment' => $result['judgment'],
                 'reason' => $result['reason'],
-                'flagged' => $isSensitive
+                'flagged' => $isSensitive,
+                'category' => $category,
+                'threshold' => $threshold,
+                'adultThreshold' => $adultContentThreshold,
+                'elapsedMs' => $result['elapsedMs'] ?? 0
             ]);
             
         } catch (Throwable $e) {
@@ -295,8 +307,9 @@ try {
     try {
         $client = new XClient();
         $mediaId = $client->uploadMedia($tweetPath);
-        // センシティブメタデータを設定
-        $client->setMediaMetadata($mediaId, $isSensitive);
+        // センシティブメタデータを設定（スコアと成人向け閾値も渡す）
+        $adultThreshold = isset($adultContentThreshold) ? $adultContentThreshold : 71;
+        $client->setMediaMetadata($mediaId, $isSensitive, $sensitiveScore, $adultThreshold);
         $res = $client->postTweet($text, $mediaId);
         if (!empty($cfg['post']['deleteOriginalOnSuccess'])) @unlink($inboxPath);
         array_shift($q['items']);

@@ -70,10 +70,7 @@ final class ImageProc
             $buf = self::encodeJPEG($img, $q, (bool)$p['stripMetadataOnTweet']);
 			$bytes = strlen($buf);
 			$limit = (int)$p['tweetMaxBytes'];
-			\App\Lib\Logger::post([
-				'level' => 'info', 'event' => 'opt.trace.search', 'imageId' => $id,
-				'q' => $q, 'bytes' => $bytes, 'within' => $bytes <= $limit, 'lo' => $lo, 'hi' => $hi,
-			]);
+			// 中間ステップログは削除（最終結果のみopt.trace.doneに記録）
 			if ($bytes <= $limit) { $best = $buf; $lo = $q; } else { $hi = $q; }
         }
 
@@ -113,10 +110,7 @@ final class ImageProc
                 $buf = self::encodeJPEG($img, $q, (bool)$p['stripMetadataOnTweet']);
 				$bytes = strlen($buf);
 				$limit = (int)$p['tweetMaxBytes'];
-				\App\Lib\Logger::post([
-					'level' => 'info', 'event' => 'opt.trace.search', 'imageId' => $id,
-					'q' => $q, 'bytes' => $bytes, 'within' => $bytes <= $limit, 'lo' => $lo, 'hi' => $hi, 'attempt' => $attempt,
-				]);
+				// 中間ステップログは削除（最終結果のみopt.trace.doneに記録）
 				if ($bytes <= $limit) { $best = $buf; $lo = $q; } else { $hi = $q; }
             }
             if ($best && strlen($best) <= (int)$p['tweetMaxBytes']) {

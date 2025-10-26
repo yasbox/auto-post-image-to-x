@@ -128,19 +128,26 @@ final class SensitiveDetector
         
         $prompt = self::getPrompt();
 
-        $payload = [
-            'contents' => [[
-                'role' => 'user',
-                'parts' => [
-                    ['text' => $prompt],
-                    ['inlineData' => ['mimeType' => 'image/jpeg', 'data' => $imgData]],
-                ],
-            ]],
-            'generationConfig' => [
-                'maxOutputTokens' => 512,
-                'temperature' => 0.3,
-            ],
-        ];
+                    $payload = [
+                        'contents' => [[
+                            'role' => 'user',
+                            'parts' => [
+                                ['text' => $prompt],
+                                ['inlineData' => ['mimeType' => 'image/jpeg', 'data' => $imgData]],
+                            ],
+                        ]],
+                        'generationConfig' => [
+                            'maxOutputTokens' => 512,
+                            'temperature' => 0.3,
+                        ],
+                        // 安全設定を緩和（高リスクコンテンツのみブロック）
+                        'safetySettings' => [
+                            ['category' => 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'threshold' => 'BLOCK_ONLY_HIGH'],
+                            ['category' => 'HARM_CATEGORY_HATE_SPEECH', 'threshold' => 'BLOCK_ONLY_HIGH'],
+                            ['category' => 'HARM_CATEGORY_HARASSMENT', 'threshold' => 'BLOCK_ONLY_HIGH'],
+                            ['category' => 'HARM_CATEGORY_DANGEROUS_CONTENT', 'threshold' => 'BLOCK_ONLY_HIGH'],
+                        ],
+                    ];
 
         $url = 'https://generativelanguage.googleapis.com/v1/models/' . rawurlencode($model) . ':generateContent?key=' . urlencode($apiKey);
 
@@ -241,6 +248,30 @@ PROMPT;
         if ($provider === 'openai') {
             $text = $data['choices'][0]['message']['content'] ?? '';
         } elseif ($provider === 'gemini') {
+            // Geminiの安全フィルターによるブロックをチェック
+            if (isset($data['promptFeedback']['blockReason'])) {
+                $blockReason = $data['promptFeedback']['blockReason'];
+                Logger::post([
+                    'level' => 'error',
+                    'event' => 'sensitive.blocked_by_gemini',
+                    'provider' => $provider,
+                    'blockReason' => $blockReason,
+                    'elapsedMs' => $elapsed,
+                ]);
+                return ['error' => true, 'message' => 'Gemini APIが画像をブロックしました（' . $blockReason . '）。OpenAI APIの使用を検討してください。'];
+            }
+            
+            // candidatesがない、または空の場合もブロックと判断
+            if (empty($data['candidates'])) {
+                Logger::post([
+                    'level' => 'error',
+                    'event' => 'sensitive.no_candidates',
+                    'provider' => $provider,
+                    'elapsedMs' => $elapsed,
+                ]);
+                return ['error' => true, 'message' => 'Gemini APIから応答がありませんでした（安全フィルターによりブロックされた可能性があります）'];
+            }
+            
             $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
         }
 
@@ -260,7 +291,7 @@ PROMPT;
                 'response' => mb_substr($text, 0, 500),
                 'elapsedMs' => $elapsed,
             ]);
-            return ['error' => true, 'message' => 'レスポンス解析エラー'];
+            return ['error' => true, 'message' => 'レスポンス解析エラー。AI APIの応答が期待された形式ではありませんでした。'];
         }
 
         // スコアを整数に変換して範囲チェック
@@ -270,20 +301,13 @@ PROMPT;
         $judgment = (string)($result['judgment'] ?? 'safe');
         $reason = (string)($result['reason'] ?? '');
 
-        Logger::post([
-            'level' => 'info',
-            'event' => 'sensitive.analyzed',
-            'provider' => $provider,
-            'score' => $score,
-            'judgment' => $judgment,
-            'reason' => $reason,
-            'elapsedMs' => $elapsed,
-        ]);
-
+        // ログは呼び出し側で出力（imageIdやcategoryを含めるため）
         return [
             'score' => $score,
             'judgment' => $judgment,
             'reason' => $reason,
+            'provider' => $provider,
+            'elapsedMs' => $elapsed,
         ];
     }
 }

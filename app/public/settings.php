@@ -169,11 +169,19 @@ $cfg = Settings::get();
           <p class="text-xs text-gray-500 mt-1">デフォルト: Gemini は `gemini-2.5-flash-lite`、OpenAI は `gpt-4o-mini`</p>
         </label>
         
-        <label class="block">判定閾値（この値以上でセンシティブ判定）
+        <label class="block">センシティブ判定閾値（この値以上でセンシティブフラグを付与）
           <input type="number" id="sensitive_threshold" min="0" max="100" class="border rounded p-2 w-full" />
           <p class="text-xs text-gray-500 mt-1">
-            0-30: 完全セーフ / 31-50: 軽度注意 / 51-70: センシティブ推奨 / 71-90: ぼかし確定 / 91-100: 成人向け<br>
-            推奨値: 51-61（グラビア・水着でも露出多めはフラグ付き投稿）
+            0-50: セーフ（フラグなし） / 51以上: センシティブ扱い（フラグ付き投稿）<br>
+            推奨値: 51-61
+          </p>
+        </label>
+        
+        <label class="block">成人向け判定閾値（この値以上で adult_content カテゴリ）
+          <input type="number" id="sensitive_adult_threshold" min="0" max="100" class="border rounded p-2 w-full" />
+          <p class="text-xs text-gray-500 mt-1">
+            センシティブ閾値〜この値未満: "その他"警告 / この値以上: "成人向けコンテンツ"警告<br>
+            推奨値: 71（センシティブ判定閾値以上の値を設定してください）
           </p>
         </label>
         
@@ -329,10 +337,12 @@ $cfg = Settings::get();
       const sensProvider = document.getElementById('sensitive_provider');
       const sensModel = document.getElementById('sensitive_model');
       const sensThreshold = document.getElementById('sensitive_threshold');
+      const sensAdultThreshold = document.getElementById('sensitive_adult_threshold');
       if (sensEnabled) sensEnabled.checked = (cfg.sensitiveDetection && cfg.sensitiveDetection.enabled) || false;
       if (sensProvider) sensProvider.value = (cfg.sensitiveDetection && cfg.sensitiveDetection.provider) || 'gemini';
       if (sensModel) sensModel.value = (cfg.sensitiveDetection && cfg.sensitiveDetection.model) || '';
       if (sensThreshold) sensThreshold.value = (cfg.sensitiveDetection && typeof cfg.sensitiveDetection.threshold === 'number') ? cfg.sensitiveDetection.threshold : 61;
+      if (sensAdultThreshold) sensAdultThreshold.value = (cfg.sensitiveDetection && typeof cfg.sensitiveDetection.adultContentThreshold === 'number') ? cfg.sensitiveDetection.adultContentThreshold : 71;
       document.getElementById('tag_min').value = cfg.post.hashtags.min;
       document.getElementById('tag_max').value = cfg.post.hashtags.max;
       document.getElementById('tag_prepend').value = cfg.post.hashtags.prepend ? 'true' : 'false';
@@ -398,7 +408,8 @@ $cfg = Settings::get();
           enabled: document.getElementById('sensitive_enabled').checked,
           provider: document.getElementById('sensitive_provider').value,
           model: document.getElementById('sensitive_model').value || (document.getElementById('sensitive_provider').value === 'gemini' ? 'gemini-2.5-flash-lite' : 'gpt-4o-mini'),
-          threshold: parseInt(document.getElementById('sensitive_threshold').value || '61', 10)
+          threshold: parseInt(document.getElementById('sensitive_threshold').value || '61', 10),
+          adultContentThreshold: parseInt(document.getElementById('sensitive_adult_threshold').value || '71', 10)
         },
         tagsText: (document.getElementById('tagsText').value || '').replace(/\r\n/g, '\n')
       };

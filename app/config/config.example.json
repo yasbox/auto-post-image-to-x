@@ -61,7 +61,8 @@
         "enabled": false,
         "provider": "gemini",
         "model": "gemini-2.5-flash-lite",
-        "threshold": 61
+        "threshold": 61,
+        "adultContentThreshold": 71
     },
     "security": {
         "sessionName": "XPOSTSESS",
