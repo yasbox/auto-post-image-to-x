@@ -251,22 +251,48 @@ PROMPT;
             // Geminiの安全フィルターによるブロックをチェック
             if (isset($data['promptFeedback']['blockReason'])) {
                 $blockReason = $data['promptFeedback']['blockReason'];
+                $safetyRatings = $data['promptFeedback']['safetyRatings'] ?? [];
+                
+                // ブロックされたカテゴリーを特定
+                $blockedCategories = [];
+                foreach ($safetyRatings as $rating) {
+                    if (isset($rating['blocked']) && $rating['blocked']) {
+                        $blockedCategories[] = [
+                            'category' => $rating['category'] ?? 'UNKNOWN',
+                            'probability' => $rating['probability'] ?? 'UNKNOWN',
+                        ];
+                    }
+                }
+                
                 Logger::post([
                     'level' => 'error',
                     'event' => 'sensitive.blocked_by_gemini',
                     'provider' => $provider,
                     'blockReason' => $blockReason,
+                    'safetyRatings' => $safetyRatings,
+                    'blockedCategories' => $blockedCategories,
                     'elapsedMs' => $elapsed,
                 ]);
-                return ['error' => true, 'message' => 'Gemini APIが画像をブロックしました（' . $blockReason . '）。OpenAI APIの使用を検討してください。'];
+                
+                $detailMsg = 'Gemini APIが画像をブロックしました（' . $blockReason . '）';
+                if (!empty($blockedCategories)) {
+                    $categoryNames = array_map(fn($c) => $c['category'] . ':' . $c['probability'], $blockedCategories);
+                    $detailMsg .= ' - ' . implode(', ', $categoryNames);
+                }
+                
+                return ['error' => true, 'message' => $detailMsg . '。OpenAI APIの使用を検討してください。'];
             }
             
             // candidatesがない、または空の場合もブロックと判断
             if (empty($data['candidates'])) {
+                // candidatesが空でもsafetyRatingsがあるかチェック
+                $safetyRatings = $data['promptFeedback']['safetyRatings'] ?? [];
+                
                 Logger::post([
                     'level' => 'error',
                     'event' => 'sensitive.no_candidates',
                     'provider' => $provider,
+                    'safetyRatings' => $safetyRatings,
                     'elapsedMs' => $elapsed,
                 ]);
                 return ['error' => true, 'message' => 'Gemini APIから応答がありませんでした（安全フィルターによりブロックされた可能性があります）'];
