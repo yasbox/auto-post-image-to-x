@@ -57,7 +57,7 @@ if (isset($_GET['logout'])) {
 </head>
 
 <body class="bg-gray-100">
-  <div class="container mx-auto max-w-screen-2xl p-6">
+  <div class="container mx-auto max-w-[3840px] p-6">
     <div class="flex items-center gap-3 mb-6 flex-wrap">
       <h1 class="text-2xl font-bold tracking-tight">X Auto Poster</h1>
       <span class="text-sm text-gray-500">自動投稿 管理コンソール</span>
@@ -177,7 +177,7 @@ if (isset($_GET['logout'])) {
         <div class="flex items-center mb-3">
           <h2 class="font-semibold tracking-tight">投稿失敗一覧（<span id="failed-count">0</span>枚）</h2>
         </div>
-        <div id="grid-failed" class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-5"></div>
+        <div id="grid-failed" class="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2"></div>
       </section>
 
       <section class="card p-5">
@@ -186,7 +186,7 @@ if (isset($_GET['logout'])) {
           <button id="btn-upload" class="ml-auto btn-base btn-primary px-3 py-2 text-sm">アップロード</button>
         </div>
         <p class="text-sm text-gray-500 my-3"><?php echo htmlspecialchars($nextPostText, ENT_QUOTES, 'UTF-8'); ?></p>
-        <div id="grid" class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-5"></div>
+        <div id="grid" class="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2"></div>
       </section>
 
       <template id="tpl-card">

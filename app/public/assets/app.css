@@ -56,4 +56,18 @@
 	background: transparent;
 }
 
+/* Custom breakpoints for 4K monitors */
+@media (min-width: 1920px) {
+	#grid,
+	#grid-failed {
+		grid-template-columns: repeat(12, minmax(0, 1fr));
+	}
+}
+@media (min-width: 2560px) {
+	#grid,
+	#grid-failed {
+		grid-template-columns: repeat(16, minmax(0, 1fr));
+	}
+}
+
 
