@@ -388,12 +388,16 @@ if (isset($_GET['logout'])) {
             gallery: '#grid',
             children: 'a',
             pswpModule: () => Promise.resolve(window.PhotoSwipe),
+            wheelToZoom: true,
+            maxZoomLevel: 10,
           });
           lb1.init();
           const lb2 = new window.PhotoSwipeLightbox({
             gallery: '#grid-failed',
             children: 'a',
             pswpModule: () => Promise.resolve(window.PhotoSwipe),
+            wheelToZoom: true,
+            maxZoomLevel: 10,
           });
           lb2.init();
           window._pswp = { destroy() { lb1.destroy(); lb2.destroy(); } };
