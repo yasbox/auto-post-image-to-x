@@ -11,16 +11,88 @@ final class TitleLLM
 
     /**
      * Generate title only. Returns a trimmed title string or empty string on failure.
+     * フォールバック機能付き：最初のプロバイダーでエラーが発生した場合、もう片方のプロバイダーで自動的に再試行
      */
     public static function generateTitle(string $previewPath, array $titleCfg, array $ngWords): string
     {
         $cfg = Settings::get();
         $cfgLlm = is_array($cfg['post']['llm'] ?? null) ? $cfg['post']['llm'] : [];
         $provider = (string)($cfgLlm['provider'] ?? '');
-        $model = (string)($cfgLlm['model'] ?? '');
-        if ($provider === '' || $model === '') {
-            throw new \RuntimeException('LLM provider/model not configured');
+        if ($provider === '') {
+            throw new \RuntimeException('LLM provider not configured');
         }
+        
+        $enableFallback = !empty($cfgLlm['fallbackProvider']);
+        
+        // 最初のプロバイダーで試行
+        $result = self::generateTitleWithProvider($previewPath, $titleCfg, $ngWords, $provider);
+        
+        // 成功した場合はそのまま返す
+        if ($result !== '') {
+            return $result;
+        }
+        
+        // フォールバックが無効な場合は空文字列を返す
+        if (!$enableFallback) {
+            return '';
+        }
+        
+        // フォールバックプロバイダーを決定
+        $fallbackProvider = ($provider === 'openai') ? 'gemini' : 'openai';
+        
+        // フォールバックプロバイダーで再試行
+        Logger::post([
+            'level' => 'info',
+            'event' => 'llm.fallback.attempt',
+            'primaryProvider' => $provider,
+            'fallbackProvider' => $fallbackProvider,
+        ]);
+        
+        $fallbackResult = self::generateTitleWithProvider($previewPath, $titleCfg, $ngWords, $fallbackProvider);
+        
+        // フォールバック成功
+        if ($fallbackResult !== '') {
+            Logger::post([
+                'level' => 'info',
+                'event' => 'llm.fallback.success',
+                'primaryProvider' => $provider,
+                'fallbackProvider' => $fallbackProvider,
+            ]);
+            return $fallbackResult;
+        }
+        
+        // フォールバックも失敗
+        Logger::post([
+            'level' => 'warn',
+            'event' => 'llm.fallback.fail',
+            'primaryProvider' => $provider,
+            'fallbackProvider' => $fallbackProvider,
+        ]);
+        
+        return '';
+    }
+    
+    /**
+     * 指定されたプロバイダーでタイトルを生成
+     * @param string $previewPath プレビュー画像のパス
+     * @param array $titleCfg タイトル設定
+     * @param array $ngWords NGワードリスト
+     * @param string $provider 使用するプロバイダー ('openai' または 'gemini')
+     * @return string 生成されたタイトル、または空文字列
+     */
+    private static function generateTitleWithProvider(string $previewPath, array $titleCfg, array $ngWords, string $provider): string
+    {
+        $cfg = Settings::get();
+        
+        // llmProvidersからモデルを取得
+        $llmProviders = is_array($cfg['llmProviders'] ?? null) ? $cfg['llmProviders'] : [];
+        $providerConfig = is_array($llmProviders[$provider] ?? null) ? $llmProviders[$provider] : [];
+        $model = (string)($providerConfig['model'] ?? '');
+        if ($model === '') {
+            // デフォルト値を設定
+            $model = ($provider === 'openai') ? 'gpt-4o-mini' : 'gemini-2.5-flash-lite';
+        }
+        
         $apiKey = $_ENV['OPENAI_API_KEY'] ?? '';
         $language = $titleCfg['language'] ?? 'en';
         $maxTitle = (int)($titleCfg['maxChars'] ?? 80);
@@ -100,7 +172,9 @@ final class TitleLLM
                     // keep minimal logging via llm.request already
                     if ($titleOut !== '') { return $titleOut; }
                 }
-            } elseif ($provider === 'gemini') {
+            }
+            
+            if ($provider === 'gemini') {
                 $geminiKey = $_ENV['GOOGLE_API_KEY'] ?? ($_ENV['GEMINI_API_KEY'] ?? '');
                 if ($geminiKey) {
                     $prompt = 'Return only JSON {"title":"..."} for a short, tasteful, minimalist photo title.' . "\n"

@@ -89,9 +89,10 @@ try {
         $provider = (string)($cfg['sensitiveDetection']['provider'] ?? 'gemini');
         $threshold = (int)($cfg['sensitiveDetection']['threshold'] ?? 61);
         $adultContentThreshold = (int)($cfg['sensitiveDetection']['adultContentThreshold'] ?? 71);
+        $enableFallback = !empty($cfg['sensitiveDetection']['fallbackProvider']);
         
         try {
-            $result = SensitiveDetector::analyze($tweetPath, $provider);
+            $result = SensitiveDetector::analyzeWithFallback($tweetPath, $provider, $enableFallback);
             
             if (isset($result['error']) && $result['error']) {
                 // API失敗 → アウト判定として失敗一覧に追加

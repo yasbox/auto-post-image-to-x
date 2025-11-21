@@ -12,6 +12,46 @@ final class Settings
         if (self::$cache !== null) return self::$cache;
         $path = __DIR__ . '/../config/config.json';
         $data = Util::readJson($path, self::default());
+        
+        // 後方互換性: llmProvidersが存在しない場合、既存の設定から構築
+        if (!isset($data['llmProviders']) || !is_array($data['llmProviders'])) {
+            $data['llmProviders'] = [];
+            
+            // post.llm.model から openai のモデルを取得
+            if (isset($data['post']['llm']['model']) && is_string($data['post']['llm']['model'])) {
+                $model = trim($data['post']['llm']['model']);
+                if ($model !== '') {
+                    // モデル名からプロバイダを推測
+                    if (strpos(strtolower($model), 'gemini-') === 0) {
+                        $data['llmProviders']['gemini'] = ['model' => $model];
+                    } else {
+                        $data['llmProviders']['openai'] = ['model' => $model];
+                    }
+                }
+            }
+            
+            // sensitiveDetection.model から gemini のモデルを取得
+            if (isset($data['sensitiveDetection']['model']) && is_string($data['sensitiveDetection']['model'])) {
+                $model = trim($data['sensitiveDetection']['model']);
+                if ($model !== '') {
+                    // モデル名からプロバイダを推測
+                    if (strpos(strtolower($model), 'gemini-') === 0) {
+                        $data['llmProviders']['gemini'] = ['model' => $model];
+                    } else {
+                        $data['llmProviders']['openai'] = ['model' => $model];
+                    }
+                }
+            }
+            
+            // デフォルト値を設定（まだ設定されていないプロバイダがある場合）
+            if (!isset($data['llmProviders']['openai'])) {
+                $data['llmProviders']['openai'] = ['model' => 'gpt-4o-mini'];
+            }
+            if (!isset($data['llmProviders']['gemini'])) {
+                $data['llmProviders']['gemini'] = ['model' => 'gemini-2.5-flash-lite'];
+            }
+        }
+        
         self::$cache = $data;
         return $data;
     }
@@ -49,7 +89,19 @@ final class Settings
                 'allowedMime' => ['image/jpeg', 'image/png', 'image/webp'],
                 'maxClientFileSizeHintMB' => 8192,
             ],
+            'llmProviders' => [
+                'openai' => [
+                    'model' => 'gpt-4o-mini',
+                ],
+                'gemini' => [
+                    'model' => 'gemini-2.5-flash-lite',
+                ],
+            ],
             'post' => [
+                'llm' => [
+                    'provider' => 'openai',
+                    'fallbackProvider' => false,
+                ],
                 'title' => [
                     'enabled' => true,
                     'language' => 'en',
@@ -96,6 +148,13 @@ final class Settings
             ],
             'logs' => [
                 'retentionDays' => 31,
+            ],
+            'sensitiveDetection' => [
+                'enabled' => false,
+                'provider' => 'gemini',
+                'threshold' => 61,
+                'adultContentThreshold' => 71,
+                'fallbackProvider' => false,
             ],
         ];
     }

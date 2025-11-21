@@ -21,7 +21,19 @@
         ],
         "maxClientFileSizeHintMB": 8192
     },
+    "llmProviders": {
+        "openai": {
+            "model": "gpt-4o-mini"
+        },
+        "gemini": {
+            "model": "gemini-2.5-flash-lite"
+        }
+    },
     "post": {
+        "llm": {
+            "provider": "openai",
+            "fallbackProvider": false
+        },
         "title": {
             "enabled": true,
             "language": "en",
@@ -60,9 +72,9 @@
     "sensitiveDetection": {
         "enabled": false,
         "provider": "gemini",
-        "model": "gemini-2.5-flash-lite",
         "threshold": 61,
-        "adultContentThreshold": 71
+        "adultContentThreshold": 71,
+        "fallbackProvider": false
     },
     "security": {
         "sessionName": "XPOSTSESS",

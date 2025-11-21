@@ -112,17 +112,39 @@ $cfg = Settings::get();
     </section>
 
     <section class="card p-5">
+      <h2 class="font-semibold mb-3 tracking-tight">LLMプロバイダ設定</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <label class="block">OpenAI モデル
+          <input type="text" id="llm_provider_openai_model" class="border rounded p-2 w-full" placeholder="例: gpt-4o-mini" />
+          <p class="text-xs text-gray-500 mt-1">`OPENAI_API_KEY` を `app/config/.env` に設定してください。</p>
+        </label>
+        <label class="block">Gemini モデル
+          <input type="text" id="llm_provider_gemini_model" class="border rounded p-2 w-full" placeholder="例: gemini-2.5-flash-lite" />
+          <p class="text-xs text-gray-500 mt-1">`GOOGLE_API_KEY`（または `GEMINI_API_KEY`）を `app/config/.env` に設定してください。</p>
+        </label>
+      </div>
+      <p class="text-xs text-gray-500 mt-2">各プロバイダで使用するモデルを設定します。投稿テキスト生成とセンシティブ判定で使用されます。</p>
+    </section>
+
+    <section class="card p-5">
       <h2 class="font-semibold mb-3 tracking-tight">投稿テキスト</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
         <label class="block md:col-span-2">LLMプロバイダ
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <select id="llm_provider" class="border rounded p-2 w-full">
-              <option value="openai">OpenAI</option>
-              <option value="gemini">Google Gemini</option>
-            </select>
-            <input type="text" id="llm_model" class="border rounded p-2 w-full md:col-span-2" placeholder="モデル（例: gpt-4o-mini / gemini-1.5-flash）" />
-          </div>
-          <p class="text-xs text-gray-500 mt-1">OpenAIは `OPENAI_API_KEY`、Geminiは `GOOGLE_API_KEY`（または `GEMINI_API_KEY`）を `app/config/.env` に設定してください。</p>
+          <select id="llm_provider" class="border rounded p-2 w-full">
+            <option value="openai">OpenAI</option>
+            <option value="gemini">Google Gemini</option>
+          </select>
+          <p class="text-xs text-gray-500 mt-1">投稿テキスト生成に使用するプロバイダを選択します。モデルは「LLMプロバイダ設定」で設定した値が使用されます。</p>
+        </label>
+        <label class="block md:col-span-2">
+          <span class="inline-flex items-center gap-2">
+            <input type="checkbox" id="llm_fallback" class="h-4 w-4" />
+            <span>フォールバック機能を有効にする</span>
+          </span>
+          <p class="text-xs text-gray-500 mt-1">
+            最初のAPIでエラーが発生した場合（Geminiが画像をブロックした場合など）、もう片方のAPI（Gemini ↔ OpenAI）で自動的に再試行します。
+            両方のAPIが失敗した場合のみ、タイトルなしで投稿されます。
+          </p>
         </label>
         <label class="block md:col-span-2">
           <span class="inline-flex items-center gap-2">
@@ -161,12 +183,7 @@ $cfg = Settings::get();
             <option value="gemini">Google Gemini（推奨・月1,500枚まで無料）</option>
             <option value="openai">OpenAI GPT-4o-mini（有料・高精度）</option>
           </select>
-          <p class="text-xs text-gray-500 mt-1">OpenAIは `OPENAI_API_KEY`、Geminiは `GOOGLE_API_KEY`（または `GEMINI_API_KEY`）を `app/config/.env` に設定してください。</p>
-        </label>
-        
-        <label class="block">モデル名
-          <input type="text" id="sensitive_model" class="border rounded p-2 w-full" placeholder="例: gemini-2.5-flash-lite / gpt-4o-mini" />
-          <p class="text-xs text-gray-500 mt-1">デフォルト: Gemini は `gemini-2.5-flash-lite`、OpenAI は `gpt-4o-mini`</p>
+          <p class="text-xs text-gray-500 mt-1">センシティブ判定に使用するプロバイダを選択します。モデルは「LLMプロバイダ設定」で設定した値が使用されます。</p>
         </label>
         
         <label class="block">センシティブ判定閾値（この値以上でセンシティブフラグを付与）
@@ -185,8 +202,19 @@ $cfg = Settings::get();
           </p>
         </label>
         
+        <label class="block">
+          <span class="inline-flex items-center gap-2">
+            <input type="checkbox" id="sensitive_fallback" class="h-4 w-4" />
+            <span>フォールバック機能を有効にする</span>
+          </span>
+          <p class="text-xs text-gray-500 mt-1">
+            最初のAPIでエラーが発生した場合、もう片方のAPI（Gemini ↔ OpenAI）で自動的に再試行します。
+            両方のAPIが失敗した場合のみ、エラーとして処理されます。
+          </p>
+        </label>
+        
         <div class="bg-yellow-50 border border-yellow-200 rounded p-3 text-sm text-yellow-800">
-          <strong>注意:</strong> API呼び出しが失敗した場合、その画像は投稿されず失敗一覧に追加されます。判定が不要な場合は、この機能を無効にしてください。
+          <strong>注意:</strong> フォールバック機能が無効の場合、API呼び出しが失敗するとその画像は投稿されず失敗一覧に追加されます。判定が不要な場合は、この機能を無効にしてください。
         </div>
       </div>
     </section>
@@ -273,16 +301,6 @@ $cfg = Settings::get();
       if (val === 'per_day') { refreshPerDaySchedule(); }
     }
 
-    function getDefaultModelForProvider(provider){
-      switch (provider) {
-        case 'gemini':
-          return 'gemini-2.5-flash-lite';
-        case 'openai':
-        default:
-          return 'gpt-4o-mini';
-      }
-    }
-
     async function refreshPerDaySchedule(){
       const wrap = document.getElementById('perday-schedule');
       if (!wrap) return;
@@ -325,8 +343,13 @@ $cfg = Settings::get();
       document.getElementById('chunkSize').value = cfg.upload.chunkSize;
       document.getElementById('concurrency').value = cfg.upload.concurrency;
       document.getElementById('allowedMime').value = (cfg.upload.allowedMime || []).join(', ');
+      // LLMプロバイダ設定
+      const llmProviders = cfg.llmProviders || {};
+      document.getElementById('llm_provider_openai_model').value = (llmProviders.openai && llmProviders.openai.model) ? llmProviders.openai.model : 'gpt-4o-mini';
+      document.getElementById('llm_provider_gemini_model').value = (llmProviders.gemini && llmProviders.gemini.model) ? llmProviders.gemini.model : 'gemini-2.5-flash-lite';
+      // 投稿テキスト
       document.getElementById('llm_provider').value = (cfg.post.llm && cfg.post.llm.provider) ? cfg.post.llm.provider : 'openai';
-      document.getElementById('llm_model').value = (cfg.post.llm && cfg.post.llm.model) ? cfg.post.llm.model : getDefaultModelForProvider(document.getElementById('llm_provider').value);
+      document.getElementById('llm_fallback').checked = (cfg.post.llm && cfg.post.llm.fallbackProvider) || false;
       document.getElementById('title_max').value = cfg.post.title.maxChars;
       document.getElementById('title_tone').value = cfg.post.title.tone;
       document.getElementById('title_ng').value = (cfg.post.title.ngWords || []).join(', ');
@@ -335,14 +358,14 @@ $cfg = Settings::get();
       // センシティブ判定
       const sensEnabled = document.getElementById('sensitive_enabled');
       const sensProvider = document.getElementById('sensitive_provider');
-      const sensModel = document.getElementById('sensitive_model');
       const sensThreshold = document.getElementById('sensitive_threshold');
       const sensAdultThreshold = document.getElementById('sensitive_adult_threshold');
+      const sensFallback = document.getElementById('sensitive_fallback');
       if (sensEnabled) sensEnabled.checked = (cfg.sensitiveDetection && cfg.sensitiveDetection.enabled) || false;
       if (sensProvider) sensProvider.value = (cfg.sensitiveDetection && cfg.sensitiveDetection.provider) || 'gemini';
-      if (sensModel) sensModel.value = (cfg.sensitiveDetection && cfg.sensitiveDetection.model) || '';
       if (sensThreshold) sensThreshold.value = (cfg.sensitiveDetection && typeof cfg.sensitiveDetection.threshold === 'number') ? cfg.sensitiveDetection.threshold : 61;
       if (sensAdultThreshold) sensAdultThreshold.value = (cfg.sensitiveDetection && typeof cfg.sensitiveDetection.adultContentThreshold === 'number') ? cfg.sensitiveDetection.adultContentThreshold : 71;
+      if (sensFallback) sensFallback.checked = (cfg.sensitiveDetection && cfg.sensitiveDetection.fallbackProvider) || false;
       document.getElementById('tag_min').value = cfg.post.hashtags.min;
       document.getElementById('tag_max').value = cfg.post.hashtags.max;
       document.getElementById('tag_prepend').value = cfg.post.hashtags.prepend ? 'true' : 'false';
@@ -374,12 +397,20 @@ $cfg = Settings::get();
           concurrency: parseInt(document.getElementById('concurrency').value || '0', 10),
           allowedMime: document.getElementById('allowedMime').value.split(',').map(s=>s.trim()).filter(Boolean)
         },
+        llmProviders: {
+          openai: {
+            model: document.getElementById('llm_provider_openai_model').value || 'gpt-4o-mini'
+          },
+          gemini: {
+            model: document.getElementById('llm_provider_gemini_model').value || 'gemini-2.5-flash-lite'
+          }
+        },
         post: {
           ...cur.post,
           llm: {
             ...cur.post.llm,
             provider: document.getElementById('llm_provider').value,
-            model: document.getElementById('llm_model').value
+            fallbackProvider: document.getElementById('llm_fallback').checked
           },
           title: {
             ...cur.post.title,
@@ -407,9 +438,9 @@ $cfg = Settings::get();
           ...(cur.sensitiveDetection || {}),
           enabled: document.getElementById('sensitive_enabled').checked,
           provider: document.getElementById('sensitive_provider').value,
-          model: document.getElementById('sensitive_model').value || (document.getElementById('sensitive_provider').value === 'gemini' ? 'gemini-2.5-flash-lite' : 'gpt-4o-mini'),
           threshold: parseInt(document.getElementById('sensitive_threshold').value || '61', 10),
-          adultContentThreshold: parseInt(document.getElementById('sensitive_adult_threshold').value || '71', 10)
+          adultContentThreshold: parseInt(document.getElementById('sensitive_adult_threshold').value || '71', 10),
+          fallbackProvider: document.getElementById('sensitive_fallback').checked
         },
         tagsText: (document.getElementById('tagsText').value || '').replace(/\r\n/g, '\n')
       };
@@ -442,21 +473,6 @@ $cfg = Settings::get();
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectMode(val); }
         });
       });
-      const provEl = document.getElementById('llm_provider');
-      if (provEl) {
-        provEl.addEventListener('change', () => {
-          const modelEl = document.getElementById('llm_model');
-          if (modelEl) modelEl.value = getDefaultModelForProvider(provEl.value);
-        });
-      }
-      // センシティブ判定APIプロバイダ変更時にもデフォルトモデルを自動入力
-      const sensProvEl = document.getElementById('sensitive_provider');
-      if (sensProvEl) {
-        sensProvEl.addEventListener('change', () => {
-          const sensModelEl = document.getElementById('sensitive_model');
-          if (sensModelEl) sensModelEl.value = getDefaultModelForProvider(sensProvEl.value);
-        });
-      }
       const onSave = async () => {
         const updated = collectFromForm(cur);
         // Detect changes relevant to per_day reschedule

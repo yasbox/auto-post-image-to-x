@@ -36,6 +36,75 @@ final class SensitiveDetector
     }
 
     /**
+     * 画像のセンシティブ判定を実行（フォールバック機能付き）
+     * 最初のプロバイダーでエラーが発生した場合、もう片方のプロバイダーで自動的に再試行
+     * 
+     * @param string $imagePath 判定する画像のパス
+     * @param string $primaryProvider 最初に使用するAPI ('openai' または 'gemini')
+     * @param bool $enableFallback フォールバックを有効にするかどうか
+     * @return array ['score' => int, 'judgment' => string, 'reason' => string] または ['error' => true, 'message' => string]
+     */
+    public static function analyzeWithFallback(string $imagePath, string $primaryProvider, bool $enableFallback = false): array
+    {
+        if (!file_exists($imagePath)) {
+            return ['error' => true, 'message' => '画像ファイルが見つかりません'];
+        }
+
+        // 最初のプロバイダーで試行
+        $result = self::analyze($imagePath, $primaryProvider);
+        
+        // エラーがなく、フォールバックが無効な場合はそのまま返す
+        if (!isset($result['error']) || !$result['error']) {
+            return $result;
+        }
+
+        // フォールバックが無効な場合はエラーをそのまま返す
+        if (!$enableFallback) {
+            return $result;
+        }
+
+        // フォールバックプロバイダーを決定
+        $fallbackProvider = ($primaryProvider === 'openai') ? 'gemini' : 'openai';
+        
+        // フォールバックプロバイダーで再試行
+        Logger::post([
+            'level' => 'info',
+            'event' => 'sensitive.fallback.attempt',
+            'primaryProvider' => $primaryProvider,
+            'fallbackProvider' => $fallbackProvider,
+            'primaryError' => $result['message'] ?? 'Unknown error',
+        ]);
+
+        $fallbackResult = self::analyze($imagePath, $fallbackProvider);
+        
+        // フォールバックも失敗した場合
+        if (isset($fallbackResult['error']) && $fallbackResult['error']) {
+            Logger::post([
+                'level' => 'error',
+                'event' => 'sensitive.fallback.fail',
+                'primaryProvider' => $primaryProvider,
+                'fallbackProvider' => $fallbackProvider,
+                'primaryError' => $result['message'] ?? 'Unknown error',
+                'fallbackError' => $fallbackResult['message'] ?? 'Unknown error',
+            ]);
+            return [
+                'error' => true,
+                'message' => '両方のAPIでエラーが発生しました。プライマリ(' . $primaryProvider . '): ' . $result['message'] . ' / フォールバック(' . $fallbackProvider . '): ' . $fallbackResult['message']
+            ];
+        }
+
+        // フォールバック成功
+        Logger::post([
+            'level' => 'info',
+            'event' => 'sensitive.fallback.success',
+            'primaryProvider' => $primaryProvider,
+            'fallbackProvider' => $fallbackProvider,
+        ]);
+
+        return $fallbackResult;
+    }
+
+    /**
      * OpenAI GPT-4o-mini で判定
      */
     private static function analyzeWithOpenAI(string $imagePath): array
@@ -46,7 +115,13 @@ final class SensitiveDetector
         }
 
         $cfg = Settings::get();
-        $model = $cfg['sensitiveDetection']['model'] ?? 'gpt-4o-mini';
+        // llmProvidersからモデルを取得
+        $llmProviders = is_array($cfg['llmProviders'] ?? null) ? $cfg['llmProviders'] : [];
+        $providerConfig = is_array($llmProviders['openai'] ?? null) ? $llmProviders['openai'] : [];
+        $model = (string)($providerConfig['model'] ?? 'gpt-4o-mini');
+        if ($model === '') {
+            $model = 'gpt-4o-mini'; // フォールバック
+        }
 
         $imgData = base64_encode(file_get_contents($imagePath));
         
@@ -122,7 +197,13 @@ final class SensitiveDetector
         }
 
         $cfg = Settings::get();
-        $model = $cfg['sensitiveDetection']['model'] ?? 'gemini-2.5-flash-lite';
+        // llmProvidersからモデルを取得
+        $llmProviders = is_array($cfg['llmProviders'] ?? null) ? $cfg['llmProviders'] : [];
+        $providerConfig = is_array($llmProviders['gemini'] ?? null) ? $llmProviders['gemini'] : [];
+        $model = (string)($providerConfig['model'] ?? 'gemini-2.5-flash-lite');
+        if ($model === '') {
+            $model = 'gemini-2.5-flash-lite'; // フォールバック
+        }
 
         $imgData = base64_encode(file_get_contents($imagePath));
         
